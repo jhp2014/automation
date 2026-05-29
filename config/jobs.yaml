@@ -18,7 +18,7 @@
 
 # run_until 은 daily.yaml 이 있으면 daily.run_until 로 덮어쓴다.
 # 본 값은 daily.yaml 이 없을 때의 폴백.
-run_until: ""              # "YYYY-MM-DD HH:MM" 또는 빈 문자열(무기한)
+run_until: "2000-01-01 00:00"            # "YYYY-MM-DD HH:MM" 또는 빈 문자열(무기한)
 tick_sec: 10
 heartbeat_interval_sec: 60
 heartbeat_source: main_runner
