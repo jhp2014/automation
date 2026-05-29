@@ -90,21 +90,26 @@ def list_images(folder: Path) -> List[Path]:
 # ---------------------------------------------------------------------------
 
 def _read_credentials() -> tuple[str, str]:
-    """환경변수에서 KWorks 로그인 자격증명을 읽는다.
+    """daily.yaml 에서 KWorks 로그인 자격증명을 읽는다.
+
+    값은 ``common.config.KWORKS_USER_ID`` / ``KWORKS_USER_PW`` 로 노출되며,
+    실제 소스는 ``config/daily.yaml`` 의 ``kworks.user_id`` / ``kworks.user_pw``.
 
     Raises:
-        RuntimeError: 필수 키가 없거나 비어 있는 경우.
+        RuntimeError: 둘 중 하나라도 비어 있는 경우(어느 키가 비었는지 명시).
     """
-    user_id = os.getenv("KWORKS_USER_ID", "").strip()
-    user_pw = os.getenv("KWORKS_USER_PW", "").strip()
+    user_id = config.KWORKS_USER_ID.strip()
+    user_pw = config.KWORKS_USER_PW.strip()
     missing = [
         k for k, v in (
-            ("KWORKS_USER_ID", user_id),
-            ("KWORKS_USER_PW", user_pw),
+            ("kworks.user_id", user_id),
+            ("kworks.user_pw", user_pw),
         ) if not v
     ]
     if missing:
-        raise RuntimeError(f"KWorks 로그인 자격증명 누락: {', '.join(missing)}")
+        raise RuntimeError(
+            f"daily.yaml 의 다음 값이 비어 있습니다: {', '.join(missing)}"
+        )
     return user_id, user_pw
 
 
@@ -133,8 +138,8 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "KWorks 전체 업무 목록에서 찾을 작업 제목(매일 바뀜). "
-            "생략 시 환경변수 KWORKS_TARGET_TITLE 값을 사용한다. "
-            "CLI 인자가 환경변수보다 우선."
+            "생략 시 daily.yaml 의 kworks.target_title 값을 사용한다. "
+            "CLI 인자가 daily.yaml 보다 우선."
         ),
     )
     parser.add_argument(
@@ -181,11 +186,13 @@ def main() -> int:
     dry_run = bool(args.dry_run)
     submit = not bool(args.no_submit)
 
-    # target_title 우선순위: CLI --target-title > 환경변수 KWORKS_TARGET_TITLE.
-    target_title: str = (args.target_title or os.getenv("KWORKS_TARGET_TITLE", "")).strip()
+    # target_title 우선순위: CLI --target-title > daily.yaml 의 kworks.target_title.
+    target_title: str = (
+        args.target_title or config.KWORKS_TARGET_TITLE
+    ).strip()
     if not target_title:
         raise SystemExit(
-            "ERROR: --target-title 도 KWORKS_TARGET_TITLE 환경변수도 비어 있습니다."
+            "ERROR: --target-title 도 daily.yaml 의 kworks.target_title 도 비어 있습니다."
         )
 
     config.ensure_dirs()
