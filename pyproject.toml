@@ -12,6 +12,9 @@ dependencies = [
     "mss>=9.0",
     "Pillow>=10.0",
     "pywin32>=306; sys_platform == 'win32'",
+    # runner 전용: jobs.yaml 스키마 검증 + Supabase heartbeat
+    "pydantic>=2.0",
+    "supabase>=2.0",
 ]
 
 [build-system]
