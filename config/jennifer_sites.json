@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Jennifer_cloud",
+    "url": "http://10.1.30.104:7910",
+    "id": "admin",
+    "login_type": "standard"
+  },
+  {
+    "name": "Jennifer_group_site",
+    "url": "http://10.1.30.104:17900",
+    "id": "admin",
+    "login_type": "standard"
+  },
+  {
+    "name": "Jennifer_lms",
+    "url": "http://172.16.31.79:7900",
+    "id": "admin",
+    "login_type": "standard"
+  },
+  {
+    "name": "Jennifer_redpen",
+    "url": "http://apm.redpenai.co.kr:7900",
+    "id": "admin",
+    "login_type": "new"
+  }
+]
