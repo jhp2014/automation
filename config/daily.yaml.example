@@ -1,0 +1,43 @@
+# =============================================================================
+# config/daily.yaml — 매일 갱신하는 값들의 단일 소스.
+#
+# 위상:
+#   - .env 와 동격이다(git ignore). 비밀값(KWorks 비밀번호 등)을 넣어도 안전.
+#   - 매일 한 번 운영자가 이 파일 하나 열어서 갱신 → 저장 → runner 재시작.
+#
+# 우선순위:
+#   - CLI 인자 (--target-title 등) > daily.yaml
+#   - .env 의 KWORKS_USER_ID / KWORKS_USER_PW / KWORKS_TARGET_TITLE 은 사용하지 않는다.
+# =============================================================================
+
+# --- runner 자동 종료 시각 ---
+# "YYYY-MM-DD HH:MM" 또는 빈 문자열(무기한). jobs.yaml 의 run_until 을 덮어쓴다.
+run_until: ""
+
+# --- KWorks 자격증명 + 매일 바뀌는 작업 제목 ---
+# jobs.server / jobs.capture 가 공유한다.
+kworks:
+  user_id: ""
+  user_pw: ""
+  target_title: ""    # 예: "2026.05.30(토) 야간 OP관제 일일보고"
+
+# --- jobs.server one_time_list 의 times ---
+# 본 리스트가 비어 있지 않으면 jobs.yaml 의 server.times 를 통째로 덮어쓴다.
+# 비어 있으면(빈 리스트 또는 키 자체 누락) jobs.yaml 값을 그대로 사용한다.
+# --target-title 은 daily.yaml 의 kworks.target_title 에서 자동 주입되므로
+# args 에는 --folder 만 적으면 된다.
+server_times: []
+# 예시 (필요 시 위 빈 리스트 대신 사용):
+# server_times:
+#   - at: "2026-05-30 01:32"
+#     args:
+#       - "--folder"
+#       - "C:/automation/server-helper/images/8 전면"
+#       - "--folder"
+#       - "C:/automation/server-helper/images/8 후면"
+#   - at: "2026-05-30 04:41"
+#     args:
+#       - "--folder"
+#       - "C:/automation/server-helper/images/9 전면"
+#       - "--folder"
+#       - "C:/automation/server-helper/images/9 후면"

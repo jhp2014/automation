@@ -23,6 +23,7 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 from common import config as common_config
+from common.daily import load_daily
 
 
 # ---------------------------------------------------------------------------
@@ -139,8 +140,41 @@ class RunnerConfig(BaseModel):
 JOBS_YAML_PATH: Path = common_config.BASE_DIR / "config" / "jobs.yaml"
 
 
+def _apply_daily_overrides(raw: dict) -> dict:
+    """daily.yaml 의 값으로 jobs.yaml 의 raw dict 를 덮어쓴다(검증 전).
+
+    덮어쓰는 규칙:
+        - daily.run_until 이 비어 있지 않으면 raw.run_until 에 적용.
+        - daily.server_times 가 비어 있지 않으면 jobs[name='server'].times 를
+          통째로 daily 값으로 치환.
+
+    Returns:
+        in-place 수정된 raw dict (체이닝 편의용).
+    """
+    daily = load_daily()
+    if daily is None:
+        return raw
+
+    if daily.run_until:
+        raw["run_until"] = daily.run_until
+
+    if daily.server_times:
+        for j in raw.get("jobs", []) or []:
+            if not isinstance(j, dict):
+                continue
+            if j.get("name") == "server" and j.get("mode") == "one_time_list":
+                j["times"] = [
+                    {"at": t.at, "args": list(t.args)}
+                    for t in daily.server_times
+                ]
+    return raw
+
+
 def load_runner_config(path: Optional[Path] = None) -> RunnerConfig:
     """``config/jobs.yaml`` 을 읽어 pydantic 으로 검증한 :class:`RunnerConfig` 반환.
+
+    ``config/daily.yaml`` 이 존재하면 그 값을 ``run_until`` / ``server.times``
+    에 우선 적용한 뒤 검증한다(매일 갱신하는 값들의 단일 소스).
 
     Args:
         path: 검증용으로 다른 YAML 경로를 지정할 때 사용. 기본은 ``JOBS_YAML_PATH``.
@@ -149,7 +183,7 @@ def load_runner_config(path: Optional[Path] = None) -> RunnerConfig:
         검증을 통과한 :class:`RunnerConfig`.
 
     Raises:
-        FileNotFoundError: 파일이 없는 경우.
+        FileNotFoundError: jobs.yaml 파일이 없는 경우.
         ValueError: YAML 파싱 실패 또는 스키마 검증 실패 시 — 어느 job·어느
             필드가 잘못됐는지 메시지에 명시.
     """
@@ -164,6 +198,9 @@ def load_runner_config(path: Optional[Path] = None) -> RunnerConfig:
 
     if not isinstance(raw, dict):
         raise ValueError(f"jobs.yaml 최상위는 dict 여야 합니다: {p}")
+
+    # daily.yaml 가 있으면 그 값을 먼저 주입한다.
+    raw = _apply_daily_overrides(raw)
 
     try:
         return RunnerConfig.model_validate(raw)
