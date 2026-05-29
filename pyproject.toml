@@ -8,6 +8,10 @@ dependencies = [
     "requests>=2.31.0",
     "playwright>=1.40.0",
     "PyYAML>=6.0",
+    # capture 전용: 좌측 모니터 스크린샷 + 윈도우 열거/검증
+    "mss>=9.0",
+    "Pillow>=10.0",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [build-system]
