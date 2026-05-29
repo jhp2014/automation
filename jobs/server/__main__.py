@@ -129,8 +129,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--target-title",
-        required=True,
-        help="KWorks 전체 업무 목록에서 찾을 작업 제목(매일 바뀜).",
+        required=False,
+        default=None,
+        help=(
+            "KWorks 전체 업무 목록에서 찾을 작업 제목(매일 바뀜). "
+            "생략 시 환경변수 KWORKS_TARGET_TITLE 값을 사용한다. "
+            "CLI 인자가 환경변수보다 우선."
+        ),
     )
     parser.add_argument(
         "--no-submit",
@@ -175,7 +180,13 @@ def main() -> int:
     args = _parse_args()
     dry_run = bool(args.dry_run)
     submit = not bool(args.no_submit)
-    target_title: str = args.target_title
+
+    # target_title 우선순위: CLI --target-title > 환경변수 KWORKS_TARGET_TITLE.
+    target_title: str = (args.target_title or os.getenv("KWORKS_TARGET_TITLE", "")).strip()
+    if not target_title:
+        raise SystemExit(
+            "ERROR: --target-title 도 KWORKS_TARGET_TITLE 환경변수도 비어 있습니다."
+        )
 
     config.ensure_dirs()
 

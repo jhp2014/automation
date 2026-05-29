@@ -300,7 +300,11 @@ def _parse_args() -> argparse.Namespace:
         "--target-title",
         required=False,
         default=None,
-        help="KWorks 전체 업무 목록에서 찾을 작업 제목. --make-baseline 이외 모든 경로에서 필수.",
+        help=(
+            "KWorks 전체 업무 목록에서 찾을 작업 제목. --make-baseline 이외 모든 경로에서 필수. "
+            "생략 시 환경변수 KWORKS_TARGET_TITLE 값을 사용한다. "
+            "CLI 인자가 환경변수보다 우선."
+        ),
     )
     parser.add_argument(
         "--make-baseline",
@@ -357,9 +361,15 @@ def main() -> int:
             return 0
 
         # 그 외 경로에서는 target_title 필수.
-        if not args.target_title:
-            raise RuntimeError("--target-title 는 필수입니다(--make-baseline 제외).")
-        target_title: str = args.target_title
+        # 우선순위: CLI --target-title > 환경변수 KWORKS_TARGET_TITLE.
+        target_title: str = (
+            args.target_title or os.getenv("KWORKS_TARGET_TITLE", "")
+        ).strip()
+        if not target_title:
+            raise RuntimeError(
+                "--target-title 도 KWORKS_TARGET_TITLE 환경변수도 비어 있습니다 "
+                "(--make-baseline 만 예외)."
+            )
 
         stage = "capture"
         LOG.info("[STAGE] %s", stage)

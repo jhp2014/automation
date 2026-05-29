@@ -4,6 +4,34 @@
 
 ## 0) 기동 한 줄
 
+가장 쉬운 방법: [`scripts/`](../scripts) 의 bat 파일을 더블클릭하거나 cmd 에서 실행.
+
+```powershell
+# runner (main loop)
+scripts\runner.bat
+
+# 개별 job
+scripts\zenius.bat
+scripts\daily_service.bat
+scripts\jennifer.bat
+scripts\capture.bat
+scripts\server.bat           # 폴더 "8 전면" 하드코딩 — 본 파일 편집해서 다른 폴더 추가/변경 가능
+
+# dry-run (로그인까지만, 알림 미전송)
+scripts\zenius-dry-run.bat
+scripts\daily_service-dry-run.bat
+scripts\jennifer-dry-run.bat
+scripts\capture-dry-run.bat
+scripts\server-dry-run.bat
+
+# capture baseline 1회 생성 (운영 사이트 4개가 좌측 모니터에 떠 있어야 OK)
+scripts\capture-baseline.bat
+```
+
+bat 들은 모두 `chcp 65001` 로 UTF-8 콘솔 설정 + 본 bat 위치 기준으로 자동으로 프로젝트 루트로 cd → cwd 가 어디든 동일하게 동작. 추가 인자가 필요하면 그대로 뒤에 붙이면 된다 (예: `scripts\server.bat --no-submit`).
+
+bat 없이 직접 실행:
+
 ```powershell
 cd C:\Users\whdgn\Dev\kwop\automation
 .\.venv\Scripts\python.exe -m runner
@@ -34,6 +62,7 @@ DAILYSERVICE_USER_ID=
 DAILYSERVICE_USER_PW=
 KWORKS_USER_ID=          # jobs.server + jobs.capture 공유
 KWORKS_USER_PW=
+KWORKS_TARGET_TITLE=     # 매일 바뀜. server·capture 가 공유. CLI --target-title 가 있으면 그것이 우선.
 
 # Jennifer 사이트별 비밀번호 (JSON 에는 id 까지만, pw 는 여기)
 JENNIFER_PW__JENNIFER_CLOUD=
@@ -110,12 +139,11 @@ SUPABASE_KEY=
         - "C:/automation/server-helper/images/8 전면"
         - "--folder"
         - "C:/automation/server-helper/images/8 후면"
-        - "--target-title"
-        - "2026.05.29(금) 야간 OP관제 일일보고"
 ```
 
 - `at` 는 반드시 `YYYY-MM-DD HH:MM`. 다른 형식은 스키마 검증에서 실패한다.
 - `args` 는 job 의 CLI 그대로. runner 가 변환하지 않는다 (인자 변환 책임은 운영자에게).
+- **`--target-title` 은 YAML 에 두지 않는다** — `.env` 의 `KWORKS_TARGET_TITLE` 한 줄만 매일 갱신하면 capture·server 두 job 이 모두 새 값을 본다.
 - 같은 entry 는 정확히 1회 실행 (`state/scheduler.json` 의 `one_time_done` 에 기록).
 - `at + grace_sec` 가 지난 entry 는 자동으로 done 처리 (catch-up 방지).
 

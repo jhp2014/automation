@@ -39,19 +39,16 @@ jobs:
     timeout_sec: 300
 
   # --- AC 캡처 + KWorks 업로드 (매 시간 [0, 600s] 무작위, grace 60s) ---
-  # NOTE: capture 는 --target-title 가 필수다. 매일 바뀌므로 운영자가 본 파일을
-  #       하루 1회 갱신하거나, target_title 만 다루는 별도 작은 헬퍼를 운용한다.
+  # target_title 은 .env 의 KWORKS_TARGET_TITLE 에서 읽는다 — YAML 갱신 불필요.
   - name: capture
     module: jobs.capture
     mode: hourly_jitter
     jitter_max_sec: 600
     grace_sec: 60
     timeout_sec: 900
-    args:
-      - "--target-title"
-      - "2026.05.29(금) 야간 OP관제 일일보고"
 
   # --- Server upload — one_time_list 예시 (실제 운영 시 at/args 갱신) ---
+  # target_title 은 .env 의 KWORKS_TARGET_TITLE 에서 읽는다 — args 에는 --folder 만.
   - name: server
     module: jobs.server
     mode: one_time_list
@@ -64,13 +61,9 @@ jobs:
           - "C:/automation/server-helper/images/8 전면"
           - "--folder"
           - "C:/automation/server-helper/images/8 후면"
-          - "--target-title"
-          - "2026.05.29(금) 야간 OP관제 일일보고"
       - at: "2026-05-29 04:41"
         args:
           - "--folder"
           - "C:/automation/server-helper/images/9 전면"
           - "--folder"
           - "C:/automation/server-helper/images/9 후면"
-          - "--target-title"
-          - "2026.05.29(금) 야간 OP관제 일일보고"
