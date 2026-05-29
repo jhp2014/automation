@@ -1,3 +1,10 @@
+"""Unified logger factory used across the monorepo.
+
+All loggers in the project must be created via :func:`get_logger` so that
+formatting, rotation, and handler-duplication behavior stay consistent with
+convention v1.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -17,6 +24,22 @@ def get_logger(
     log_file: Union[str, Path, None] = None,
     level: str = "INFO",
 ) -> logging.Logger:
+    """Return a configured logger with console + (optional) rotating file output.
+
+    Calling this function twice with the same ``name`` returns the same logger
+    without adding duplicate handlers. ``propagate`` is set to ``False`` so log
+    records do not bubble to the root logger.
+
+    Args:
+        name: Logger name (commonly the module name or job slug).
+        log_file: Either an absolute path, a relative path resolved under
+            :data:`common.config.LOG_DIR`, or ``None`` for console-only.
+        level: Log level name (e.g. ``"INFO"``, ``"DEBUG"``). Invalid names
+            fall back to ``INFO``.
+
+    Returns:
+        A :class:`logging.Logger` ready for use.
+    """
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
