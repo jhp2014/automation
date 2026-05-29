@@ -186,29 +186,33 @@ def main() -> int:
     dry_run = bool(args.dry_run)
     submit = not bool(args.no_submit)
 
-    # target_title 우선순위: CLI --target-title > daily.yaml 의 kworks.target_title.
-    target_title: str = (
-        args.target_title or config.KWORKS_TARGET_TITLE
-    ).strip()
-    if not target_title:
-        raise SystemExit(
-            "ERROR: --target-title 도 daily.yaml 의 kworks.target_title 도 비어 있습니다."
-        )
-
     config.ensure_dirs()
 
     stage = "init"
     start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     LOG.info(
-        "[START] server upload at %s dry_run=%s submit=%s folders=%d target_title=%r",
+        "[START] server upload at %s dry_run=%s submit=%s folders=%d",
         start_ts,
         dry_run,
         submit,
         len(args.folder),
-        target_title,
     )
 
     try:
+        # target_title 검증을 try 안에서 stage 로 보고 — capture job 과 동일한
+        # 실패 처리(예외 → 마지막 stage 포함한 Pushover) 동작이 되도록 한다.
+        # 우선순위: CLI --target-title > daily.yaml 의 kworks.target_title.
+        stage = "resolve_target_title"
+        LOG.info("[STAGE] %s", stage)
+        target_title: str = (
+            args.target_title or config.KWORKS_TARGET_TITLE
+        ).strip()
+        if not target_title:
+            raise RuntimeError(
+                "--target-title 도 daily.yaml 의 kworks.target_title 도 비어 있습니다."
+            )
+        LOG.info("target_title=%r", target_title)
+
         # 폴더 인자 절대경로화·존재 검증을 먼저 끝낸다(브라우저 띄우기 전 실패하게).
         stage = "resolve_folders"
         LOG.info("[STAGE] %s", stage)

@@ -19,7 +19,7 @@
 | `RUN_UNTIL` | `str` | `daily.yaml` | `run_until`. `"YYYY-MM-DD HH:MM"` 또는 `""` (무기한). |
 | `SERVER_TIMES` | `list[DailyServerTime]` | `daily.yaml` | `server_times`. 없으면 `[]`. |
 
-import 시 부작용 없음(디렉터리 생성·네트워크 X). daily.yaml 파일이 없거나 파싱/검증에 실패하면 위 KWORKS_* / RUN_UNTIL / SERVER_TIMES 는 모두 빈 값/빈 리스트가 된다 (실패는 경고 로그만).
+import 시 동작: `.env` 로드 + `config/daily.yaml` 1회 읽기 (있으면). **디렉터리 생성·네트워크 호출은 없다**. daily.yaml 파일이 없거나 파싱/검증에 실패하면 위 KWORKS_* / RUN_UNTIL / SERVER_TIMES 는 모두 빈 값/빈 리스트가 된다 (실패는 경고 로그만).
 
 ### `ensure_dirs() -> None`
 런타임 디렉터리(`LOG_DIR`, `STATE_DIR`)를 생성한다. 멱등. import 시 자동 호출되지 않는다.
