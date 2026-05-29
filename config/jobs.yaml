@@ -1,0 +1,76 @@
+# =============================================================================
+# config/jobs.yaml — runner 일정 정의 (규약 v1.1)
+#
+# 비밀값(토큰·비밀번호·SUPABASE_KEY 등) 절대 금지. 비밀값은 모두 .env.
+# 각 job 은 python -m <module> <args...> 형태로 호출된다.
+# 인터프리터 통일 조항: runner 가 자기를 실행한 sys.executable 로 호출한다.
+#
+# 모드:
+#   interval         : interval_sec 마다 1회.
+#   hourly_jitter    : 매 시간 [0, jitter_max_sec] 무작위 시점 + grace_sec 윈도우.
+#   one_time_list    : times 의 각 at 시각 ± grace_sec 윈도우에서 정확히 1회.
+# =============================================================================
+
+run_until: ""              # "YYYY-MM-DD HH:MM" 또는 빈 문자열(무기한)
+tick_sec: 10
+heartbeat_interval_sec: 60
+heartbeat_source: main_runner
+
+jobs:
+  # --- Zenius EMS 모니터 (180초 주기) ---
+  - name: zenius
+    module: jobs.zenius
+    mode: interval
+    interval_sec: 180
+    timeout_sec: 600
+
+  # --- DailyService(SDS) 대시보드 모니터 (600초 주기) ---
+  - name: daily_service
+    module: jobs.daily_service
+    mode: interval
+    interval_sec: 600
+    timeout_sec: 600
+
+  # --- Jennifer 통합 점검 (600초 주기, Fail-Fast) ---
+  - name: jennifer
+    module: jobs.jennifer
+    mode: interval
+    interval_sec: 600
+    timeout_sec: 300
+
+  # --- AC 캡처 + KWorks 업로드 (매 시간 [0, 600s] 무작위, grace 60s) ---
+  # NOTE: capture 는 --target-title 가 필수다. 매일 바뀌므로 운영자가 본 파일을
+  #       하루 1회 갱신하거나, target_title 만 다루는 별도 작은 헬퍼를 운용한다.
+  - name: capture
+    module: jobs.capture
+    mode: hourly_jitter
+    jitter_max_sec: 600
+    grace_sec: 60
+    timeout_sec: 900
+    args:
+      - "--target-title"
+      - "2026.05.29(금) 야간 OP관제 일일보고"
+
+  # --- Server upload — one_time_list 예시 (실제 운영 시 at/args 갱신) ---
+  - name: server
+    module: jobs.server
+    mode: one_time_list
+    grace_sec: 300
+    timeout_sec: 3600
+    times:
+      - at: "2026-05-29 01:32"
+        args:
+          - "--folder"
+          - "C:/automation/server-helper/images/8 전면"
+          - "--folder"
+          - "C:/automation/server-helper/images/8 후면"
+          - "--target-title"
+          - "2026.05.29(금) 야간 OP관제 일일보고"
+      - at: "2026-05-29 04:41"
+        args:
+          - "--folder"
+          - "C:/automation/server-helper/images/9 전면"
+          - "--folder"
+          - "C:/automation/server-helper/images/9 후면"
+          - "--target-title"
+          - "2026.05.29(금) 야간 OP관제 일일보고"
