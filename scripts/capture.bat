@@ -1,11 +1,18 @@
 @echo off
-REM capture.bat - jobs.capture (target-title from .env KWORKS_TARGET_TITLE)
+REM capture.bat - jobs.capture
+REM   target-title is auto-loaded from daily.yaml kworks.target_title.
 chcp 65001 > nul
 setlocal
-pushd "%~dp0.."
-".venv\Scripts\python.exe" -m jobs.capture %*
+set "PY=%~dp0..\.venv\Scripts\python.exe"
+if not exist "%PY%" (
+    echo ERROR: Python not found at %PY%
+    echo Please create .venv and install deps. See docs/08_install.md.
+    pause
+    exit /b 1
+)
+cd /d "%~dp0.."
+"%PY%" -m jobs.capture %*
 set "RC=%errorlevel%"
-popd
 echo.
 echo (exit code: %RC%)
 pause
