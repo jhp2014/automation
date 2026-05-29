@@ -6,13 +6,20 @@
 
 ### 모듈 상수
 
-| 이름 | 타입 | 설명 |
-|------|------|------|
-| `BASE_DIR` | `pathlib.Path` | `automation/` 절대경로. |
-| `LOG_DIR` | `pathlib.Path` | `BASE_DIR / "logs"`. |
-| `STATE_DIR` | `pathlib.Path` | `BASE_DIR / "state"`. |
-| `PUSHOVER_TOKEN` | `str` | `.env` 의 `PUSHOVER_TOKEN`. 없으면 빈 문자열. |
-| `PUSHOVER_USER` | `str` | `.env` 의 `PUSHOVER_USER`. 없으면 빈 문자열. |
+| 이름 | 타입 | 소스 | 설명 |
+|------|------|------|------|
+| `BASE_DIR` | `pathlib.Path` | — | `automation/` 절대경로. |
+| `LOG_DIR` | `pathlib.Path` | — | `BASE_DIR / "logs"`. |
+| `STATE_DIR` | `pathlib.Path` | — | `BASE_DIR / "state"`. |
+| `PUSHOVER_TOKEN` | `str` | `.env` | `PUSHOVER_TOKEN`. 없으면 `""`. |
+| `PUSHOVER_USER` | `str` | `.env` | `PUSHOVER_USER`. 없으면 `""`. |
+| `KWORKS_USER_ID` | `str` | `daily.yaml` | `kworks.user_id`. 없으면 `""`. |
+| `KWORKS_USER_PW` | `str` | `daily.yaml` | `kworks.user_pw`. 없으면 `""`. |
+| `KWORKS_TARGET_TITLE` | `str` | `daily.yaml` | `kworks.target_title`. 없으면 `""`. |
+| `RUN_UNTIL` | `str` | `daily.yaml` | `run_until`. `"YYYY-MM-DD HH:MM"` 또는 `""` (무기한). |
+| `SERVER_TIMES` | `list[DailyServerTime]` | `daily.yaml` | `server_times`. 없으면 `[]`. |
+
+import 시 부작용 없음(디렉터리 생성·네트워크 X). daily.yaml 파일이 없거나 파싱/검증에 실패하면 위 KWORKS_* / RUN_UNTIL / SERVER_TIMES 는 모두 빈 값/빈 리스트가 된다 (실패는 경고 로그만).
 
 ### `ensure_dirs() -> None`
 런타임 디렉터리(`LOG_DIR`, `STATE_DIR`)를 생성한다. 멱등. import 시 자동 호출되지 않는다.
@@ -30,6 +37,33 @@
 ```python
 from common.config import get_telegram_target
 hb = get_telegram_target("zenius", "heartbeat")   # TelegramTarget(...)
+```
+
+---
+
+## common.daily
+
+`config/daily.yaml` 로더. `common.config` 가 import 시 사용한다. 외부에서 직접 부를 일은 거의 없지만 노출되어 있다.
+
+### `load_daily(*, force: bool = False) -> DailyConfig | None`
+daily.yaml 을 1회 로드해 캐시. 파일이 없으면 `None`. 파싱/스키마 실패도 `None` + 경고 로그(파일이 운영자 수정 대상이라 거친 실패 대신 흡수).
+
+### pydantic 모델
+
+```python
+class DailyKworks(BaseModel):
+    user_id: str = ""
+    user_pw: str = ""
+    target_title: str = ""
+
+class DailyServerTime(BaseModel):
+    at: str               # "YYYY-MM-DD HH:MM"
+    args: list[str] = []
+
+class DailyConfig(BaseModel):
+    run_until: str = ""   # "YYYY-MM-DD HH:MM" 또는 ""
+    kworks: DailyKworks
+    server_times: list[DailyServerTime] = []
 ```
 
 ---

@@ -51,7 +51,16 @@ automation/
 
 ## 5. 설정·비밀값 규약
 
-비밀값(비밀번호·토큰·키)은 코드와 YAML 에 절대 평문으로 넣지 않는다. `.env` 로 관리하고 `common/config.py` 가 로딩한다. `.env.example` 에는 키 이름만 두고 값은 비운다. 환경 고유값 중 비밀이 아닌 것(URL, 대상 제목 등)은 YAML 또는 config 에 둘 수 있다.
+비밀값은 코드와 **committed YAML** (jobs.yaml 등) 에 절대 평문으로 넣지 않는다. 비밀값은 두 곳에 분산해 보관하며 **둘 다 git ignore** 대상이다:
+
+| 파일 | 빈도 | 용도 |
+|------|------|------|
+| `.env` | 거의 안 바뀜 | 정적 비밀(Pushover/Telegram/Supabase 토큰, Zenius·DailyService·Jennifer 자격증명) |
+| `config/daily.yaml` | 매일 갱신 | run_until, KWorks 자격증명·target_title, `jobs.server.times` |
+
+`.env.example` / `config/daily.yaml.example` 에는 키 이름과 구조만 두고 값은 비운다. `common/config.py` 가 양쪽을 로드해 모듈 상수로 노출한다 (`common/daily.py` 가 daily.yaml 의 로더).
+
+우선순위: **CLI 인자 > daily.yaml > (해당 없음)**. `.env` 는 별도 키들이라 충돌 없음.
 
 Telegram 봇은 job 마다 다르며 명명 규칙으로 동적 로딩한다 — 코드에 박지 않는다.
 
@@ -62,9 +71,11 @@ TELEGRAM_CHAT__<JOBKEY>__<PURPOSE> = <chat_id>
 
 새 job 추가는 `.env` 두 줄 추가만으로 끝나야 한다(코드 수정 없음).
 
-## 6. 일정(YAML) 규약 — 예정
+## 6. 일정(YAML) 규약
 
-JOBS 일정은 `config/jobs.yaml` 에 정의하며 코드에 하드코딩하지 않는다. 각 job 은 실행 인자를 `args` 리스트로 직접 명시한다(러너가 변환하지 않는다). YAML 은 로딩 시 스키마 검증을 거치며, 오류 시 어느 job 의 어느 필드가 잘못됐는지 명확히 보고한다. (runner 미구현 — 본 항목은 향후 구현 예정.)
+JOBS 일정은 `config/jobs.yaml` 에 **구조** 만 정의한다(모드/모듈/주기/timeout). 매일 갱신하는 값(`run_until`, `jobs.server.times`)은 `config/daily.yaml` 에서 관리하며, runner 가 로드 시 jobs.yaml 위에 덮어쓴다.
+
+각 job 은 실행 인자를 `args` 리스트로 직접 명시한다(러너가 변환하지 않는다). YAML 은 pydantic 으로 스키마 검증되며, 오류 시 어느 job·어느 필드가 잘못됐는지 명확히 보고한다.
 
 ## 7. 로그 규약
 

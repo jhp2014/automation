@@ -37,11 +37,20 @@ cd C:\Users\whdgn\Dev\kwop\automation
 .\.venv\Scripts\python.exe -m runner
 ```
 
-종료: `Ctrl+C` (자식 프로세스까지 정리). 자동 종료는 `config/jobs.yaml` 의 `run_until` (예: `"2026-05-29 08:40"`) 로 지정. 빈 문자열 또는 키 자체 생략 시 무기한.
+종료: `Ctrl+C` (자식 프로세스까지 정리). 자동 종료는 [`config/daily.yaml`](../config/daily.yaml.example) 의 `run_until` (예: `"2026-05-29 08:40"`) 로 지정. 빈 문자열 또는 키 자체 생략 시 무기한 (`jobs.yaml` 의 `run_until` 폴백을 본다).
 
-## 1) `.env` 준비 (모든 키 한눈에)
+## 1) 두 개의 비밀 파일 (`.env` + `config/daily.yaml`)
 
-`.env.example` 을 복사해 `.env` 생성 후 채운다. 누락된 키는 해당 기능을 쓰는 시점에 명확한 에러로 알려준다.
+운영에서 다루는 비밀/매일값은 두 파일에 나뉘어 있다. 둘 다 git ignore.
+
+| 파일 | 빈도 | 들어갈 값 |
+|------|------|----------|
+| `.env` | 거의 안 바뀜 | Pushover, Telegram, Supabase, 그 외 사이트별(Zenius/DailyService/Jennifer) 자격증명 |
+| `config/daily.yaml` | 매일 갱신 | `run_until`, KWorks 자격증명/제목, `jobs.server` 의 `times` |
+
+### 1-A) `.env` (거의 안 바뀌는 비밀)
+
+`.env.example` 을 복사해 `.env` 생성 후 채운다.
 
 ```ini
 # Pushover (긴급 알림 단일 계정)
@@ -55,14 +64,11 @@ TELEGRAM_CHAT__ZENIUS__HEARTBEAT=
 TELEGRAM_BOT__DAILYSERVICE=
 TELEGRAM_CHAT__DAILYSERVICE__HEARTBEAT=
 
-# 사이트별 로그인
+# 사이트별 로그인 (KWorks 제외 — KWorks 는 daily.yaml 로 이동)
 ZENIUS_USER_ID=
 ZENIUS_USER_PW=
 DAILYSERVICE_USER_ID=
 DAILYSERVICE_USER_PW=
-KWORKS_USER_ID=          # jobs.server + jobs.capture 공유
-KWORKS_USER_PW=
-KWORKS_TARGET_TITLE=     # 매일 바뀜. server·capture 가 공유. CLI --target-title 가 있으면 그것이 우선.
 
 # Jennifer 사이트별 비밀번호 (JSON 에는 id 까지만, pw 는 여기)
 JENNIFER_PW__JENNIFER_CLOUD=
@@ -74,6 +80,38 @@ JENNIFER_PW__JENNIFER_REDPEN=
 SUPABASE_URL=
 SUPABASE_KEY=
 ```
+
+### 1-B) `config/daily.yaml` (매일 갱신)
+
+`config/daily.yaml.example` 을 복사해 `config/daily.yaml` 생성 후 채운다. 매일 운영 시작 시 이 파일 하나만 열어서 갱신하면 된다.
+
+```yaml
+# runner 자동 종료 시각. 빈 문자열이면 무기한.
+run_until: "2026-05-30 08:40"
+
+# KWorks 자격증명 + 매일 바뀌는 작업 제목 (server·capture 공유)
+kworks:
+  user_id: "..."
+  user_pw: "..."
+  target_title: "2026.05.30(토) 야간 OP관제 일일보고"
+
+# jobs.server one_time_list 의 times. 비어 있으면 jobs.yaml 의 server.times 폴백.
+server_times:
+  - at: "2026-05-30 01:32"
+    args:
+      - "--folder"
+      - "C:/automation/server-helper/images/8 전면"
+      - "--folder"
+      - "C:/automation/server-helper/images/8 후면"
+  - at: "2026-05-30 04:41"
+    args:
+      - "--folder"
+      - "C:/automation/server-helper/images/9 전면"
+      - "--folder"
+      - "C:/automation/server-helper/images/9 후면"
+```
+
+우선순위: **CLI 인자 > daily.yaml**. 즉 수동 실행 시 `--target-title "..."` 를 주면 그 값이 이긴다.
 
 ## 2) 개별 job 수동 실행 / dry-run
 
@@ -126,24 +164,23 @@ SUPABASE_KEY=
 
 ### one_time_list 의 at / args 갱신
 
+**중요**: `jobs.server` 의 실제 `times` 는 `config/daily.yaml` 의 `server_times` 에서 관리한다. `jobs.yaml` 의 `server.times` 는 daily.yaml 이 비어 있을 때의 폴백(현재는 과거 시각 dummy)이다.
+
+`daily.yaml` 예시:
+
 ```yaml
-- name: server
-  module: jobs.server
-  mode: one_time_list
-  grace_sec: 300
-  timeout_sec: 3600
-  times:
-    - at: "2026-05-29 01:32"
-      args:
-        - "--folder"
-        - "C:/automation/server-helper/images/8 전면"
-        - "--folder"
-        - "C:/automation/server-helper/images/8 후면"
+server_times:
+  - at: "2026-05-30 01:32"
+    args:
+      - "--folder"
+      - "C:/automation/server-helper/images/8 전면"
+      - "--folder"
+      - "C:/automation/server-helper/images/8 후면"
 ```
 
 - `at` 는 반드시 `YYYY-MM-DD HH:MM`. 다른 형식은 스키마 검증에서 실패한다.
 - `args` 는 job 의 CLI 그대로. runner 가 변환하지 않는다 (인자 변환 책임은 운영자에게).
-- **`--target-title` 은 YAML 에 두지 않는다** — `.env` 의 `KWORKS_TARGET_TITLE` 한 줄만 매일 갱신하면 capture·server 두 job 이 모두 새 값을 본다.
+- **`--target-title` 은 args 에 두지 않는다** — daily.yaml 의 `kworks.target_title` 한 곳만 갱신하면 capture·server 두 job 이 모두 새 값을 본다.
 - 같은 entry 는 정확히 1회 실행 (`state/scheduler.json` 의 `one_time_done` 에 기록).
 - `at + grace_sec` 가 지난 entry 는 자동으로 done 처리 (catch-up 방지).
 
