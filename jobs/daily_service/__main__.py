@@ -13,9 +13,7 @@ from __future__ import annotations
 
 # 프로젝트 루트를 sys.path에 추가한다.
 # python -m jobs.daily_service 로 실행하든, 이 파일을 직접 실행하든
-# common 패키지를 항상 import할 수 있게 하기 위함이다.
-# 또한 stdlib의 `selectors` 모듈을 우리의 selectors/ 패키지가 그림자처리
-# (shadow)할 수 있도록 sys.path[0]에 강제로 끼워 넣는다.
+# common / site_selectors 패키지를 항상 import할 수 있게 하기 위함이다.
 import sys
 from pathlib import Path
 
@@ -35,7 +33,7 @@ from common.browser import save_storage_state, sync_browser
 from common.config import TelegramTarget, get_telegram_target
 from common.logging import get_logger
 from common.notify import send_heartbeat, send_pushover_emergency
-from selectors import daily_service as D
+from site_selectors import daily_service as D
 
 
 # ---------------------------------------------------------------------------

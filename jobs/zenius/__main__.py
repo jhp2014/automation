@@ -6,7 +6,7 @@
     - 로깅: common.logging.get_logger
     - 알림: common.notify (Pushover 긴급 / Telegram 보고서·heartbeat)
     - 텔레그램 타깃 조회: common.config.get_telegram_target
-    - 셀렉터: selectors.zenius
+    - 셀렉터: site_selectors.zenius
 
 비밀값(로그인 id/pw)은 .env에서 읽는다(ZENIUS_USER_ID/ZENIUS_USER_PW).
 """
@@ -15,9 +15,7 @@ from __future__ import annotations
 
 # 프로젝트 루트를 sys.path에 추가한다.
 # python -m jobs.zenius 로 실행하든, 이 파일을 직접 실행하든
-# common 패키지를 항상 import할 수 있게 하기 위함이다.
-# 또한 stdlib의 `selectors` 모듈을 우리의 selectors/ 패키지가 그림자처리
-# (shadow)할 수 있도록 sys.path[0]에 강제로 끼워 넣는다.
+# common / site_selectors 패키지를 항상 import할 수 있게 하기 위함이다.
 import sys
 from pathlib import Path
 
@@ -47,7 +45,7 @@ from common.notify import (
     send_telegram_message,
     send_telegram_photo,
 )
-from selectors import zenius as Z
+from site_selectors import zenius as Z
 
 
 # ---------------------------------------------------------------------------
