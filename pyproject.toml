@@ -1,0 +1,20 @@
+[project]
+name = "automation"
+version = "0.1.0"
+description = "Monorepo for KWorks / Zenius / DailyService automation jobs (convention v1.1)"
+requires-python = ">=3.10"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+    "playwright>=1.40.0",
+    "PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["common*", "jobs*", "selectors*", "runner*"]
+exclude = ["tests*"]
