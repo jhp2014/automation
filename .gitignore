@@ -20,6 +20,7 @@ config/daily.yaml
 # Logs / runtime state
 logs/
 state/
+captures/
 *.log
 
 # IDE
