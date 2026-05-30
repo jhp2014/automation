@@ -12,8 +12,9 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import IO, Any, Dict, List, Optional
 
 from common import config as common_config
 from common.logging import get_logger
@@ -44,6 +45,41 @@ def _safe_decode(b: Optional[bytes]) -> str:
 # ---------------------------------------------------------------------------
 # 실행
 # ---------------------------------------------------------------------------
+
+# 비정상 종료 요약에 남길 stderr tail 최대 줄 수(메모리 상한).
+_STDERR_TAIL_MAX = 200
+
+
+def _drain_stderr(stream: IO[bytes], name: str, sink: List[str]) -> None:
+    """자식 프로세스의 stderr 를 한 줄씩 읽어 runner.log 에 실시간 기록한다.
+
+    파이썬 자식의 콘솔 로그(logging.StreamHandler 는 stderr 로 출력)와 Playwright
+    Node 드라이버의 출력(EPIPE 등 포함)이 모두 이 스트림으로 들어온다. 자식이
+    중간에 hang/크래시해도 직전 출력을 잃지 않도록 즉시 기록하고, 동시에 PIPE
+    버퍼가 가득 차 자식이 write 에서 블로킹되는 교착을 막는다.
+
+    Args:
+        stream: 자식의 stderr (바이트 스트림).
+        name: 로그 접두에 쓸 job 이름.
+        sink: 비정상 종료 요약용 tail 버퍼. 최근 ``_STDERR_TAIL_MAX`` 줄만 유지.
+    """
+    try:
+        for raw in iter(stream.readline, b""):
+            line = _safe_decode(raw).rstrip("\r\n")
+            if not line:
+                continue
+            sink.append(line)
+            if len(sink) > _STDERR_TAIL_MAX:
+                del sink[:-_STDERR_TAIL_MAX]
+            _log.info("[%s] » %s", name, line)
+    except Exception as e:
+        _log.warning("[%s] stderr 드레인 예외(무시): %r", name, e)
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
 
 def _build_cmd(job: JobConfig, schedule_entry: Optional[OneTimeEntry]) -> List[str]:
     """``[sys.executable, "-m", module, *공통args, *entry.args]`` 조립."""
@@ -87,6 +123,18 @@ def run_job(
     running: Dict[str, int] = runner_state.setdefault("running_pid", {})
     running[name] = p.pid
 
+    # 자식 stderr 를 실시간으로 runner.log 에 흘린다. hang/크래시(예: Playwright
+    # Node 드라이버 EPIPE)에도 직전 출력을 잃지 않고, PIPE 버퍼 포화 교착을 막는다.
+    stderr_tail: List[str] = []
+    drainer: Optional[threading.Thread] = None
+    if p.stderr is not None:
+        drainer = threading.Thread(
+            target=_drain_stderr,
+            args=(p.stderr, name, stderr_tail),
+            daemon=True,
+        )
+        drainer.start()
+
     start_time = time.time()
     timed_out = False
     try:
@@ -98,7 +146,6 @@ def run_job(
                 except Exception as e:
                     _log.warning("[%s] kill 실패(무시): %r", name, e)
                 timed_out = True
-                # kill 후 stderr 수거를 위해 communicate 까지 간다.
                 break
 
             ret = p.poll()
@@ -107,26 +154,43 @@ def run_job(
 
             time.sleep(0.5)
 
-        # 잔여 stderr 수거(블로킹 짧게).
+        # 종료 확정 + 드레이너가 EOF 까지 읽도록 join.
         try:
-            _stdout_b, stderr_b = p.communicate(timeout=5)
+            p.wait(timeout=5)
         except subprocess.TimeoutExpired:
+            _log.warning("[%s] wait timeout -> kill 재시도", name)
             try:
                 p.kill()
-            except Exception:
-                pass
-            _stdout_b, stderr_b = p.communicate()
+            except Exception as e:
+                _log.warning("[%s] kill 재시도 실패(무시): %r", name, e)
+            try:
+                p.wait(timeout=5)
+            except Exception as e:
+                _log.warning("[%s] kill 후 wait 실패(무시): %r", name, e)
         except Exception as e:
-            _log.warning("[%s] communicate 실패(무시): %r", name, e)
-            stderr_b = None
+            _log.warning("[%s] wait 실패(무시): %r", name, e)
+        if drainer is not None:
+            drainer.join(timeout=5)
 
         rc = p.returncode if p.returncode is not None else -1
-        _log.info("[%s] END | exit=%d%s", name, rc, " (timeout)" if timed_out else "")
+        elapsed = time.time() - start_time
+        _log.info(
+            "[%s] END | exit=%d%s elapsed=%.1fs stderr_lines=%d",
+            name,
+            rc,
+            " (timeout)" if timed_out else "",
+            elapsed,
+            len(stderr_tail),
+        )
 
-        if rc != 0 and stderr_b:
-            stderr_txt = _safe_decode(stderr_b).strip()
-            if stderr_txt:
-                _log.warning("[%s] STDERR:\n%s", name, stderr_txt[:4000])
+        if rc != 0:
+            tail = "\n".join(stderr_tail[-40:]).strip()
+            if tail:
+                _log.warning("[%s] STDERR(tail):\n%s", name, tail[:4000])
+            else:
+                _log.warning(
+                    "[%s] 비정상 종료(exit=%d)인데 stderr 출력이 없습니다.", name, rc
+                )
 
         return rc
 

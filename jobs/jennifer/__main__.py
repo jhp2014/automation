@@ -61,6 +61,13 @@ CHART_RENDER_WAIT_MS = 5000
 # 새로고침 후 데이터 갱신 대기(원본 1초).
 REFRESH_WAIT_MS = 1000
 
+# 팝업 내 지표(fatal/total) visible 대기. 원본은 timeout 미지정(기본 30s)이라
+# 드라이버/팝업이 끊긴 경우를 늦게 감지했다. 명시 타임아웃으로 빨리 끊는다.
+METRIC_VISIBLE_TIMEOUT_MS = 10000
+
+# 새로고침 버튼 visible 대기.
+REFRESH_VISIBLE_TIMEOUT_MS = 10000
+
 # 세션 유효성 확인 타임아웃(원본 5초).
 SESSION_CHECK_TIMEOUT_MS = 5000
 
@@ -447,6 +454,24 @@ def _digits_only(s: str) -> int:
     return int(digits) if digits else 0
 
 
+def _popup_state(popup_page: Page) -> str:
+    """팝업/연결 상태를 예외 없이 한 줄 문자열로 만든다(진단용).
+
+    드라이버/브라우저 연결이 끊긴 상황에서도 ``.url`` / ``.is_closed()`` 호출이
+    예외를 던질 수 있으므로 각각 방어적으로 감싼다. 이 문자열로 "팝업이 닫힌
+    건지", "연결이 끊긴 건지"를 사후에 구분할 단서를 남긴다.
+    """
+    try:
+        closed = popup_page.is_closed()
+    except Exception as e:
+        closed = f"<is_closed 실패: {e!r}>"
+    try:
+        url = popup_page.url
+    except Exception as e:
+        url = f"<url 실패: {e!r}>"
+    return f"is_closed={closed} url={url}"
+
+
 def _get_metrics_with_refresh(popup_page: Page, login_type: str) -> Dict[str, int]:
     """팝업에서 새로고침 후 fatal/total 텍스트를 정수로 추출한다.
 
@@ -466,17 +491,32 @@ def _get_metrics_with_refresh(popup_page: Page, login_type: str) -> Dict[str, in
     total_sel = J.TOTAL_BY_TYPE[login_type]
 
     try:
+        LOG.info(
+            "[metrics] 진입: %s | refresh_sel=%s fatal_sel=%s total_sel=%s",
+            _popup_state(popup_page),
+            refresh_sel,
+            fatal_sel,
+            total_sel,
+        )
+
         refresh_btn = popup_page.locator(refresh_sel)
-        refresh_btn.wait_for(state="visible", timeout=10000)
+        LOG.info("[metrics] 새로고침 버튼 visible 대기 (timeout=%dms)", REFRESH_VISIBLE_TIMEOUT_MS)
+        refresh_btn.wait_for(state="visible", timeout=REFRESH_VISIBLE_TIMEOUT_MS)
+        LOG.info("[metrics] 새로고침 버튼 visible 확인 -> 클릭")
         refresh_btn.click()
-        LOG.info("새로고침 클릭")
+        LOG.info("새로고침 클릭 -> 데이터 갱신 대기 %dms", REFRESH_WAIT_MS)
         popup_page.wait_for_timeout(REFRESH_WAIT_MS)
 
         fatal_locator = popup_page.locator(fatal_sel).first
         total_locator = popup_page.locator(total_sel).first
 
-        fatal_locator.wait_for(state="visible")
+        LOG.info("[metrics] fatal 지표 visible 대기 (timeout=%dms)", METRIC_VISIBLE_TIMEOUT_MS)
+        fatal_locator.wait_for(state="visible", timeout=METRIC_VISIBLE_TIMEOUT_MS)
+        LOG.info("[metrics] fatal 지표 visible 확인 -> 텍스트 추출")
         fatal_text = fatal_locator.inner_text()
+        LOG.info("[metrics] total 지표 visible 대기 (timeout=%dms)", METRIC_VISIBLE_TIMEOUT_MS)
+        total_locator.wait_for(state="visible", timeout=METRIC_VISIBLE_TIMEOUT_MS)
+        LOG.info("[metrics] total 지표 visible 확인 -> 텍스트 추출")
         total_text = total_locator.inner_text()
 
         metrics = {
@@ -493,7 +533,16 @@ def _get_metrics_with_refresh(popup_page: Page, login_type: str) -> Dict[str, in
         return metrics
 
     except PWTimeoutError as e:
+        LOG.warning("[metrics] 추출 타임아웃: %s | %s", e, _popup_state(popup_page))
         raise RuntimeError(f"수치 추출 타임아웃: {e}") from e
+    except PWError as e:
+        # TargetClosedError 등 드라이버/팝업/브라우저 연결 단절 계열.
+        # EPIPE 로 Node 드라이버가 죽은 경우가 여기로 들어온다.
+        state = _popup_state(popup_page)
+        LOG.warning("[metrics] Playwright 연결/타깃 오류(단절 의심): %r | %s", e, state)
+        raise RuntimeError(
+            f"수치 추출 중 Playwright 오류(연결/타깃 단절 의심): {e!r} | {state}"
+        ) from e
 
 
 # ---------------------------------------------------------------------------
