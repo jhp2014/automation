@@ -67,6 +67,9 @@ SESSION_CHECK_TIMEOUT_MS = 5000
 # 로그인 후 대시보드 진입 타임아웃(원본 30초).
 LOGIN_WAIT_TIMEOUT_MS = 30000
 
+# Redpen 로그인 후 깨진 HTTP 리다이렉트/Chrome error를 빠르게 감지할 대기.
+REDPEN_REDIRECT_CHECK_MS = 3000
+
 # 페이지 진입(goto) 타임아웃(원본 60초).
 GOTO_TIMEOUT_MS = 60000
 
@@ -202,6 +205,28 @@ def _do_login(
     page.fill(J.SEL_INPUT_ID, site_id)
     page.fill(J.SEL_INPUT_PW, site_pw)
     page.click(btn)
+
+    if login_type == "new":
+        for _ in range(max(1, REDPEN_REDIRECT_CHECK_MS // 250)):
+            current_url = page.url
+            if (
+                current_url.startswith("chrome-error://")
+                or current_url.startswith("http://")
+                or current_url.startswith(dashboard_url)
+            ):
+                break
+            page.wait_for_timeout(250)
+
+        current_url = page.url
+        if current_url.startswith("chrome-error://") or current_url.startswith("http://"):
+            LOG.warning(
+                "Redpen 로그인 후 깨진 리다이렉트 감지 -> HTTPS 대시보드 직접 진입: "
+                "current_url=%s dashboard_url=%s",
+                current_url,
+                dashboard_url,
+            )
+            page.goto(dashboard_url, timeout=GOTO_TIMEOUT_MS)
+
     try:
         page.wait_for_selector(wait_sel, timeout=LOGIN_WAIT_TIMEOUT_MS)
         return page
