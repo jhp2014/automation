@@ -125,54 +125,54 @@ def get_telegram_target(job_key: str, purpose: str) -> TelegramTarget:
 
 
 # ---------------------------------------------------------------------------
-# settings.yaml 조회 헬퍼 (동작 토글)
+# settings.yaml 조회 헬퍼 (동작 토글 — 폴백 없음)
 # ---------------------------------------------------------------------------
 
-def get_headless(job_key: str, *, default: bool = True) -> bool:
-    """``settings.yaml`` 에서 job 의 ``headless`` 값을 조회.
+def get_headless(job_key: str) -> bool:
+    """``settings.yaml`` 에서 ``<job_key>.headless`` 를 조회.
 
-    조회 순서: ``jobs[job_key].headless`` → ``defaults.headless`` → ``default``.
-    settings.yaml 자체가 없거나 파싱 실패면 즉시 ``default`` 반환.
-
-    Args:
-        job_key: settings.yaml 의 jobs 키와 일치하는 문자열
-            (예: ``"zenius"``, ``"capture"``).
-        default: 어느 단계에서도 명시값이 없을 때의 코드 기본값.
-
-    Returns:
-        bool — 해석된 headless 값.
-    """
-    cfg = load_settings()
-    if cfg is None:
-        return default
-    job = cfg.jobs.get(job_key)
-    if job is not None and job.headless is not None:
-        return job.headless
-    if cfg.defaults.headless is not None:
-        return cfg.defaults.headless
-    return default
-
-
-def get_submit_by_enter(job_key: str, *, default: bool = True) -> bool:
-    """``settings.yaml`` 에서 job 의 ``submit_by_enter`` 값을 조회.
-
-    조회 순서: ``jobs[job_key].submit_by_enter`` → ``defaults.submit_by_enter``
-    → ``default``. server / capture 외 job 에는 의미가 없지만 정책상 동일한
-    조회 규칙을 사용한다.
+    폴백 없음: 파일이 없거나(:func:`load_settings` 가 raise) 해당 job 키가
+    없으면 예외로 죽는다. CLI 로 ``--headless`` / ``--no-headless`` 를 명시한
+    경우에는 호출부가 본 함수를 부르지 않으므로 settings.yaml 이 없어도 된다.
 
     Args:
-        job_key: settings.yaml 의 jobs 키.
-        default: 명시값이 없을 때의 코드 기본값.
+        job_key: settings.yaml 최상위 job 키(예: ``"zenius"``).
 
     Returns:
-        bool — 해석된 submit_by_enter 값.
+        bool — 해당 job 의 headless 값.
+
+    Raises:
+        FileNotFoundError: settings.yaml 이 없는 경우.
+        RuntimeError: 파싱/스키마 실패 또는 해당 job 키 누락.
     """
     cfg = load_settings()
-    if cfg is None:
-        return default
-    job = cfg.jobs.get(job_key)
-    if job is not None and job.submit_by_enter is not None:
-        return job.submit_by_enter
-    if cfg.defaults.submit_by_enter is not None:
-        return cfg.defaults.submit_by_enter
-    return default
+    job = getattr(cfg, job_key, None)
+    if job is None:
+        raise RuntimeError(f"settings.yaml: {job_key} 누락")
+    return job.headless
+
+
+def get_submit_by_enter(job_key: str) -> bool:
+    """``settings.yaml`` 에서 ``<job_key>.submit_by_enter`` 를 조회(server/capture 전용).
+
+    폴백 없음: 파일·job 키·필드 중 하나라도 없으면 예외로 죽는다. CLI 로
+    ``--submit`` / ``--no-submit`` 을 명시한 경우에는 호출부가 본 함수를 부르지
+    않으므로 settings.yaml 이 없어도 된다.
+
+    Args:
+        job_key: settings.yaml 최상위 job 키(``"server"`` 또는 ``"capture"``).
+
+    Returns:
+        bool — 해당 job 의 submit_by_enter 값.
+
+    Raises:
+        FileNotFoundError: settings.yaml 이 없는 경우.
+        RuntimeError: 파싱/스키마 실패, job 키 누락, 또는 submit_by_enter 미설정.
+    """
+    cfg = load_settings()
+    job = getattr(cfg, job_key, None)
+    if job is None:
+        raise RuntimeError(f"settings.yaml: {job_key} 누락")
+    if job.submit_by_enter is None:
+        raise RuntimeError(f"settings.yaml: {job_key}.submit_by_enter 누락")
+    return job.submit_by_enter

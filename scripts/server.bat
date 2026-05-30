@@ -1,7 +1,7 @@
 @echo off
-REM server.bat - jobs.server with hardcoded folders.
+REM server.bat - jobs.server with folder names under jobs/server/images.
 REM   target-title is auto-loaded from daily.yaml kworks.target_title.
-REM   Adjust IMGBASE and the folder names below to match your image layout.
+REM   Folders are relative names resolved to jobs/server/images/<name>.
 chcp 65001 > nul
 setlocal
 set "PY=%~dp0..\.venv\Scripts\python.exe"
@@ -12,8 +12,7 @@ if not exist "%PY%" (
     exit /b 1
 )
 cd /d "%~dp0.."
-set "IMGBASE=C:\automation\server-helper\images"
-"%PY%" -m jobs.server --folder "%IMGBASE%\8 전면" --folder "%IMGBASE%\8 후면" %*
+"%PY%" -m jobs.server --folder "8 전면" --folder "8 후면" --no-headless --no-submit %*
 set "RC=%errorlevel%"
 echo.
 echo (exit code: %RC%)

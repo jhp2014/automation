@@ -44,12 +44,12 @@ automation/
 │   ├── jobs.yaml                   # 구조 (모드/모듈/주기/timeout). 거의 안 바뀜
 │   ├── daily.yaml                  # 매일 갱신 (run_until, KWorks 자격증명, server times). git ignore
 │   ├── daily.yaml.example          # daily.yaml 템플릿
+│   ├── settings.yaml               # 동작 토글 (headless/submit_by_enter). git 추적, 비밀 금지
 │   └── jennifer_sites.json         # Jennifer 사이트 목록 (id 까지만, pw 는 .env)
 ├── scripts/                        # Windows bat 단축실행
 │   ├── runner.bat
-│   ├── <job>.bat / <job>-dry-run.bat
-│   ├── capture-baseline.bat
-│   └── dry-run-all.bat
+│   ├── <job>.bat                   # 개별 job (디버그용 --no-headless 박음)
+│   └── capture-baseline.bat
 ├── docs/                           # 본 문서들
 ├── logs/                           # 런타임 생성 (config.LOG_DIR)
 ├── state/                          # 런타임 생성 (config.STATE_DIR)
@@ -78,7 +78,7 @@ automation/
 ┌───────────────────────────────────────────────────────────────────┐
 │ python -m jobs.<name>                                              │
 │  - __main__.py 가 sys.path 부트스트랩                              │
-│  - argparse (--dry-run 필수)                                       │
+│  - argparse (--headless/--no-headless 등 동작 토글)               │
 │  - stage 변수로 진입 로그 + 실패 시 알림에 마지막 stage 포함        │
 └─────────────────┬─────────────────────────────────────────────────┘
                   │ import (단방향)
@@ -89,7 +89,7 @@ automation/
 └─────────────────┬─────────────────────────────────────────────────┘
                   │ 파일 I/O (import 시점 또는 호출 시)
                   ▼
-        .env (정적 비밀)  +  config/daily.yaml (매일 갱신)
+  .env (정적 비밀) + config/daily.yaml (매일 갱신) + config/settings.yaml (동작 토글)
 ```
 
 규칙:
@@ -100,7 +100,7 @@ automation/
 ## 5분 안에 핵심 정리
 
 1. 새 job은 `jobs/<name>/__main__.py` 에 추가. 부트스트랩으로 `_PROJECT_ROOT`를 sys.path에 끼우고 `common.*` 만 의존한다.
-2. 모든 job은 `--dry-run` 을 받아야 한다. dry-run에서는 로그인/세션 확인까지만 하고 알림·외부 작업은 생략.
+2. `--dry-run` 은 폐지됐다. 모든 job은 `--headless`/`--no-headless` 를 받고(업로드형은 `--submit`/`--no-submit` 도), 우선순위는 `CLI 인자 > config/settings.yaml`(폴백 없음). 점검은 헤드풀(`--no-headless`) 또는 업로드 직전 정지(`--no-submit`)로 한다.
 3. `stage` 변수를 단계마다 갱신하고 진입 로그를 남긴다. 실패 시 알림 메시지에 마지막 stage를 포함.
 4. 비밀값(토큰·비번)은 `.env`. 매일 갱신값(run_until, KWorks 자격증명·target_title, server times)은 `config/daily.yaml`. Telegram 봇은 job마다 다르며 `TELEGRAM_BOT__<JOBKEY>` / `TELEGRAM_CHAT__<JOBKEY>__<PURPOSE>` 명명 규칙으로 동적 로딩된다.
 5. 산출물 경로 규약: 상태 파일은 `config.STATE_DIR`, 로그는 `config.LOG_DIR`, 캡처류는 `config.BASE_DIR/captures/<job>/`. cwd 기준 상대경로 사용 금지.

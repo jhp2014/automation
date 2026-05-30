@@ -50,21 +50,27 @@ LOG = get_logger("jobs.<name>", "<name>.log")
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="<name> job")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="로그인까지만 수행하고 알림/외부 작업 생략")
+    parser.add_argument("--headless", action=argparse.BooleanOptionalAction,
+                        default=None,
+                        help="브라우저 헤드리스 여부. 미지정 시 settings.yaml 을 따른다.")
     # ... job별 인자
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
-    dry_run = bool(args.dry_run)
+
+    # CLI 인자 > settings.yaml. 둘 다 없으면 get_headless 가 에러로 죽인다.
+    headless = (
+        args.headless if args.headless is not None
+        else config.get_headless("<name>")
+    )
 
     config.ensure_dirs()
 
     stage = "init"
-    LOG.info("[START] <name> at %s dry_run=%s",
-             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), dry_run)
+    LOG.info("[START] <name> at %s headless=%s",
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), headless)
 
     try:
         stage = "credentials"
@@ -72,14 +78,10 @@ def main() -> int:
         # user_id = os.getenv("<NAME>_USER_ID", "")
         # ...
 
-        with sync_browser(headless=True) as (_browser, context, page):
+        with sync_browser(headless=headless) as (_browser, context, page):
             stage = "login"
             LOG.info("[STAGE] %s", stage)
             # ... 로그인/세션 확인
-
-            if dry_run:
-                LOG.info("[DRY-RUN] 로그인까지 확인 완료, 이후 단계 생략")
-                return 0
 
             stage = "main_work"
             LOG.info("[STAGE] %s", stage)
@@ -89,9 +91,6 @@ def main() -> int:
 
     except Exception as e:
         LOG.exception("[FAIL] stage=%s err=%r", stage, e)
-        if dry_run:
-            LOG.info("[DRY-RUN] 실패해도 알림은 생략")
-            return 1
         send_pushover_emergency(
             title="[<Name>] 실패",
             message=f"stage={stage} | err={e}",
@@ -130,14 +129,23 @@ if __name__ == "__main__":
 
 `headless`, `submit_by_enter` 같이 거의 안 바뀌는 동작 스위치는 코드 상수가 아니라
 `config/settings.yaml` 에서 `config.get_headless("<job>")` / `config.get_submit_by_enter("<job>")`
-로 조회한다. 우선순위는 `CLI 인자 > settings.yaml > 코드 기본값`.
+로 조회한다. 우선순위는 `CLI 인자 > settings.yaml` 두 단계뿐이며 **코드 기본값
+폴백은 없다**. CLI 로도 안 주고 settings.yaml 에도 값이 없으면 해당 헬퍼가
+예외로 죽는다. CLI 토글은 `argparse.BooleanOptionalAction(default=None)` 으로 받아
+`None`(미지정) 일 때만 settings.yaml 을 본다.
 
-## 5) `--dry-run` 규약
+## 5) 토글 / 점검 규약 (dry-run 폐지)
 
-- 모든 job은 `--dry-run` 플래그를 받아야 한다.
-- dry-run 에서는 **로그인/세션 확인까지만** 수행하고 그 이후 단계(데이터 스캔/업로드/외부 호출)는 생략.
-- dry-run 에서는 **알림 전송 금지**: Pushover, Telegram(heartbeat/report) 모두 보내지 않는다.
-- dry-run 도 "어디까지 도달했는지" 는 로그로 남긴다. 표준 메시지: `[DRY-RUN] 로그인까지 확인 완료, 이후 단계 생략`.
+- `--dry-run` 은 폐지됐다. 어떤 job 도 받지 않는다. 실패하면 항상 평소처럼
+  Pushover/Telegram 을 보낸다(알림 생략 분기 없음).
+- 모든 job 은 `--headless` / `--no-headless` 를 받는다(`BooleanOptionalAction`,
+  `default=None`). 개별 `scripts/<job>.bat` 은 디버그용으로 `--no-headless`(헤드풀)
+  를 박아둔다.
+- 업로드형 job(server / capture)은 `--submit` / `--no-submit` 도 받는다. 디버그
+  경로는 `--no-submit` 으로 **Enter 최종등록 직전까지** 실제로 수행한 뒤 멈추는
+  것이다(첨부까지는 그대로 한다).
+- 비업로드형 job(zenius / daily_service / jennifer)은 평소 실행이 곧 점검이다.
+  헤드풀로 한 번 돌려 로그인/세션/페이지 진입을 눈으로 확인하면 된다.
 
 ## 6) `stage` 로깅 규약
 
@@ -174,8 +182,9 @@ job 이 새 토큰/자격증명을 쓰면:
 
 새 job 을 작성하고 PR 올리기 전:
 
-- [ ] `python -m jobs.<name> --help` 가 정상 출력
-- [ ] `python -m jobs.<name> --dry-run` 가 로그인까지만 도달 후 종료, 알림 미전송
+- [ ] `python -m jobs.<name> --help` 가 정상 출력(`--headless/--no-headless` 노출)
+- [ ] `python -m jobs.<name> --no-headless` 헤드풀로 한 번 돌려 로그인/세션 확인
+      (업로드형이면 `--no-submit` 으로 Enter 직전까지)
 - [ ] 모든 공개 함수에 타입 힌트 + docstring (Args/Returns/Raises)
 - [ ] 상태/로그/캡처 경로가 모두 `config.*` 기준
 - [ ] `stage` 로깅이 단계별로 들어가 있음

@@ -128,15 +128,18 @@ notepad config\daily.yaml
 
 세 단계로 확장하며 점검한다. 각 단계가 끝까지 성공해야 다음으로 넘어간다.
 
-### 7-1) dry-run-all — 자격증명/세션/페이지 진입 점검
+### 7-1) 비업로드형 job 헤드풀 점검 — 자격증명/세션/페이지 진입
+
+`--dry-run` 은 폐지됐다. 비업로드형 3개를 헤드풀로 한 번씩 돌려 눈으로 확인한다
+(개별 bat 에 이미 `--no-headless` 가 박혀 있다).
 
 ```powershell
-.\scripts\dry-run-all.bat
+.\scripts\zenius.bat
+.\scripts\daily_service.bat
+.\scripts\jennifer.bat
 ```
-- zenius / daily_service / jennifer 세 개를 `--dry-run` 으로 차례 실행
-- 각 job 의 [START] → 로그인 도달 → [DRY-RUN] ... 종료 로그 확인
-- Summary 줄의 `zenius=0  daily_service=0  jennifer=0` 면 OK
-- 하나라도 0 이 아니면 `logs/<job>.log` 의 마지막 `[FAIL] stage=` 라인부터 본다
+- 각 job 의 [START] → 로그인 도달 → [OK]/[END] 종료 로그 확인 (exit code 0)
+- 실패하면 평소처럼 알림이 전송되며, `logs/<job>.log` 의 마지막 `[FAIL] stage=` 라인부터 본다
 
 ### 7-2) capture-baseline — 좌측 모니터 + 4개 창 인식 확인
 
@@ -177,7 +180,7 @@ Please create .venv and install deps. See docs/08_install.md.
   - 원격 데스크톱 세션이 끊긴 상태(콘솔이 잠겨 있음) — `mss` 가 모니터를 인식 못 함
   - WSL / Linux — `pywin32` import 실패
   - 헤드리스 가상 서버 — 디스플레이 부재로 캡처 빈 화면
-- **jennifer** 의 캔버스 더블클릭은 헤드리스에서 가끔 불안정. `config/settings.yaml` 의 `jobs.jennifer.headless` 를 `false` 로 바꾸면 헤드풀로 전환된다 (코드 흐름 동일).
+- **jennifer** 의 캔버스 더블클릭은 헤드리스에서 가끔 불안정. `config/settings.yaml` 의 `jennifer.headless` 를 `false` 로 바꾸거나 `--no-headless` 를 주면 헤드풀로 전환된다 (코드 흐름 동일).
 - `chcp 65001` 가 bat 첫 줄에 있어 한국어 폴더명 / 작업 제목이 cmd → Python 으로 깨지지 않는다. 콘솔 폰트가 한국어를 못 그리면 표시가 깨질 수 있지만 데이터는 정상.
 
 ## 10) 트러블슈팅 한 줄

@@ -11,7 +11,7 @@
 
 작성 또는 수정할 파일 경로를 모두 나열한다. 예시:
 
-> `jobs/<name>/{__init__,__main__}.py`, `site_selectors/<name>.py`. 규약 v1.1 따름(한글 주석, dry-run, stage 로깅, 경로 안전성, 산출물 경로 조항).
+> `jobs/<name>/{__init__,__main__}.py`, `site_selectors/<name>.py`. 규약 v1.1 따름(한글 주석, 동작 토글 `--headless`, stage 로깅, 경로 안전성, 산출물 경로 조항).
 
 ### 전제
 
@@ -37,9 +37,9 @@ job 한 회 실행이 수행할 단계를 **stage 단위로** 기술한다. KWor
 | 인자 | 필수 | 기본 | 설명 |
 |------|------|------|------|
 | `--target-title` | 필수 | — | KWorks 작업 제목 (매일 바뀜) |
-| `--folder` | 1개 이상 필수 | — | 업로드할 이미지 폴더 (append) |
-| `--no-submit` | 선택 | False | Enter 등록 생략 |
-| `--dry-run` | 선택 | False | 로그인까지만, 알림 미전송 |
+| `--folder` | 1개 이상 필수 | — | 업로드할 폴더명 (append, jobs/server/images 기준 상대명) |
+| `--submit` / `--no-submit` | 선택 | None→settings | Enter 최종등록 여부 (업로드형 전용) |
+| `--headless` / `--no-headless` | 선택 | None→settings | 헤드리스 여부 (`BooleanOptionalAction`) |
 
 ### env 키
 
@@ -65,9 +65,11 @@ job 이 추가로 읽을 환경변수. 비밀값과 비밀 아닌 값을 구분.
 | 로그 | `get_logger("jobs.<name>", "<name>.log")` |
 | 캡처/baseline | `config.BASE_DIR / "captures" / "<job>" / ...` |
 
-### dry-run 정의
+### 점검 경로 정의
 
-어느 stage 까지 도달 후 멈출지 명시. 예: "로그인 + open_task_detail 까지만 수행, 댓글/업로드/submit/알림 생략".
+`--dry-run` 은 폐지됐다(실패 시 항상 알림 전송). 점검은 동작 토글로 한다:
+업로드형은 `--no-submit` 으로 Enter 최종등록 직전까지(첨부 포함) 수행, 비업로드형은
+`--no-headless` 로 헤드풀 실행해 로그인/세션/페이지 진입을 눈으로 확인.
 
 ### 건드리면 안 되는 것
 
@@ -79,8 +81,8 @@ job 이 추가로 읽을 환경변수. 비밀값과 비밀 아닌 값을 구분.
 
 명세 이행 여부를 확인할 수 있는 구체적 명령. 예:
 
-- `python -m jobs.<name> --help` 가 인자 목록을 정상 출력
-- `python -m jobs.<name> --dry-run` 이 로그인까지 도달 후 종료, Pushover/Telegram 미전송
+- `python -m jobs.<name> --help` 가 인자 목록을 정상 출력(`--headless/--no-headless` 노출)
+- `python -m jobs.<name> --no-headless` 헤드풀로 로그인까지 도달 확인(업로드형은 `--no-submit` 으로 Enter 직전까지)
 - (KWorks 사용 시) target 제목으로 검색되어 폼이 열리는지 정상 모드 1회 확인
 - 상태/로그/캡처가 모두 `config.*` 기준 경로에 생성되는지 확인
 
@@ -95,4 +97,4 @@ job 이 추가로 읽을 환경변수. 비밀값과 비밀 아닌 값을 구분.
 - 명세서는 짧을수록 좋다. 동작 요약 + 보존 사항만 명확하면 나머지는 규약이 메꿔준다.
 - 새 시그니처를 요청할 때는 함수 형태를 코드 블록으로 그대로 적어주면 AI 가 추측하지 않는다.
 - 환경 고유값(셀렉터/URL/임계값)은 명세서에 정확히 명시하거나 "원본 그대로 유지" 를 명시할 것.
-- 검증 기준은 가능하면 외부 망/실 사이트 접속 없이 검증 가능한 명령으로 시작하라 (예: `--help`, `--dry-run`).
+- 검증 기준은 가능하면 외부 망/실 사이트 접속 없이 검증 가능한 명령으로 시작하라 (예: `--help`).

@@ -89,9 +89,14 @@ JOBS 일정은 `config/jobs.yaml` 에 **구조** 만 정의한다(모드/모듈/
 
 상태 파일은 `config.STATE_DIR`, 로그는 `config.LOG_DIR` 에 둔다. 그 외 job 이 생성하는 산출물(캡처 이미지, baseline 등)은 `config.BASE_DIR` 하위의 용도별 폴더에 둔다 — 캡처류는 `BASE_DIR/captures/<job>/`. 모든 경로는 cwd 가 아닌 config 기준 절대경로로 해석한다.
 
-## 10. dry-run 의무 조항
+## 10. 점검 경로 조항 (dry-run 폐지)
 
-모든 job 은 `--dry-run` 플래그를 지원한다. dry-run 에서는 **로그인(또는 세션 확인)까지만** 수행하고, 그 이후의 실제 작업(데이터 스캔/업로드/알림 전송)은 하지 않는다. 단, dry-run 에서도 "어디까지 도달했는지" 를 로그로 남긴다. 알림(Pushover/Telegram)은 dry-run 에서 전송하지 않는다.
+`--dry-run` 은 폐지됐다. 어떤 job 도 받지 않으며, 실패 시 항상 평소처럼 알림(Pushover/Telegram)을 보낸다. 점검은 동작 토글로 한다:
+
+- **업로드형 job(server / capture)**: `--no-submit` 으로 KWorks Enter 최종등록 직전까지(첨부 포함) 실제로 수행한 뒤 멈추는 것이 디버그 경로다.
+- **비업로드형 job(zenius / daily_service / jennifer)**: 평소 실행이 곧 점검이다. `--no-headless` 로 헤드풀로 한 번 돌려 로그인/세션/페이지 진입을 눈으로 확인한다.
+
+모든 job 은 `--headless` / `--no-headless`(`BooleanOptionalAction`, `default=None`)를 받는다. 우선순위는 `CLI 인자 > settings.yaml` 이며 코드 기본값 폴백은 없다(둘 다 없으면 에러로 죽는다).
 
 ## 11. stage 로깅 조항
 
@@ -99,7 +104,7 @@ JOBS 일정은 `config/jobs.yaml` 에 **구조** 만 정의한다(모드/모듈/
 
 ## 12. 실행·검증 규약
 
-각 job 은 `python -m jobs.<name>` 으로 단독 실행 가능해야 한다. 가능한 경우 로그인까지만 하고 멈추는 dry-run 모드를 제공한다. 새 버전은 기존 운영 코드를 건드리지 않고 별도 디렉터리에서 짓는다.
+각 job 은 `python -m jobs.<name>` 으로 단독 실행 가능해야 한다. 점검은 10번 조항의 동작 토글(`--no-headless` / `--no-submit`)로 한다. 새 버전은 기존 운영 코드를 건드리지 않고 별도 디렉터리에서 짓는다.
 
 ## 13. AI 작업 규약
 

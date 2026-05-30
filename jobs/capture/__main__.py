@@ -47,10 +47,6 @@ from . import window_utils as W
 # KWorks 진입 URL. server job과 공유한다.
 KWORKS_URL = "https://kworks.kyowon.co.kr/"
 
-# 캡처 댓글 텍스트(원본에서 빈 문자열). KworksClient.type_comment는 빈 문자열이면
-# no-op이므로 그대로 둔다. 필요 시 여기만 바꾸면 된다.
-DEFAULT_COMMENT = ""
-
 # --- 캡처 대상 식별 (원본 ac_config.json 값 그대로) ---
 KEYWORDS: Dict[str, str] = {
     "WhatsUp": "WhatsUp",
@@ -322,23 +318,16 @@ def _parse_args() -> argparse.Namespace:
         help="dHash 비교 생략(baseline 없이도 진행 가능).",
     )
     parser.add_argument(
-        "--no-submit",
-        action="store_true",
-        help="Enter 등록 생략(첨부만, 등록은 사용자가 직접).",
+        "--submit",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="업로드 후 Enter 최종등록 여부. 미지정 시 settings.yaml 을 따른다.",
     )
     parser.add_argument(
-        "--no-upload",
-        action="store_true",
-        help=(
-            "캡처 + safety_check + 로그인 + 폼 확보까지만 수행하고 "
-            "댓글/업로드/submit/Pushover 를 모두 생략(디버그용). "
-            "--dry-run 보다 한 단계 더 진행하며, 실패 시 Pushover 는 보낸다."
-        ),
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="capture + safety_check 까지만 수행하고 업로드/알림 생략.",
+        "--headless",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="브라우저 헤드리스 여부. 미지정 시 settings.yaml 을 따른다.",
     )
     return parser.parse_args()
 
@@ -346,15 +335,20 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     """capture job 진입점."""
     args = _parse_args()
-    dry_run = bool(args.dry_run)
-    no_upload = bool(args.no_upload)
     no_compare = bool(args.no_compare)
     make_baseline = bool(args.make_baseline)
 
-    # 우선순위: CLI --no-submit (지정 시 강제 False) > settings.yaml.
-    submit = config.get_submit_by_enter("capture")
-    if args.no_submit:
-        submit = False
+    # 우선순위: CLI 인자 > settings.yaml. 미지정(None)이면 settings.yaml 을 따른다.
+    submit = (
+        args.submit
+        if args.submit is not None
+        else config.get_submit_by_enter("capture")
+    )
+    headless = (
+        args.headless
+        if args.headless is not None
+        else config.get_headless("capture")
+    )
 
     config.ensure_dirs()
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
@@ -362,10 +356,9 @@ def main() -> int:
     stage = "init"
     start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     LOG.info(
-        "[START] capture job at %s dry_run=%s no_upload=%s submit=%s no_compare=%s make_baseline=%s",
+        "[START] capture job at %s headless=%s submit=%s no_compare=%s make_baseline=%s",
         start_ts,
-        dry_run,
-        no_upload,
+        headless,
         submit,
         no_compare,
         make_baseline,
@@ -373,7 +366,7 @@ def main() -> int:
 
     try:
         if make_baseline:
-            # baseline 만들기는 dry-run과 무관하게 캡처/마커만 만들고 종료.
+            # baseline 만들기는 캡처/마커만 만들고 종료(업로드/알림 미수행).
             stage = "make_baseline"
             LOG.info("[STAGE] %s", stage)
             _do_baseline()
@@ -407,16 +400,12 @@ def main() -> int:
                 latest_path,
             )
 
-        if dry_run:
-            LOG.info("[DRY-RUN] capture + safety_check 완료, 업로드/알림 생략")
-            return 0
-
         stage = "credentials"
         LOG.info("[STAGE] %s", stage)
         user_id, user_pw = _read_credentials()
 
         with sync_browser(
-            headless=config.get_headless("capture"),
+            headless=headless,
         ) as (_browser, _context, page):
             stage = "kworks_login"
             LOG.info("[STAGE] %s", stage)
@@ -427,17 +416,6 @@ def main() -> int:
             LOG.info("[STAGE] %s", stage)
             form = client.open_task_detail(target_title)
 
-            if no_upload:
-                # 폼 확보까지 도달 후 의도적 종료(디버그 경로). 댓글/업로드/submit/
-                # Pushover 모두 생략. 폼 확보 도중 예외가 났다면 except 절에서
-                # 정상적으로 Pushover 가 발송된다(no_upload 가 dry_run 과 다른 점).
-                LOG.info("[NO-UPLOAD] 로그인+폼 확보 완료, 업로드/알림 생략")
-                return 0
-
-            stage = "type_comment"
-            LOG.info("[STAGE] %s", stage)
-            client.type_comment(form, DEFAULT_COMMENT)
-
             stage = "upload_files"
             LOG.info("[STAGE] %s", stage)
             client.upload_files(form, [image_path])
@@ -447,17 +425,13 @@ def main() -> int:
                 LOG.info("[STAGE] %s", stage)
                 client.submit(form)
             else:
-                LOG.info("[INFO] --no-submit -> Enter 등록 생략")
+                LOG.info("[INFO] submit=False -> Enter 등록 생략")
 
         LOG.info("[OK] capture+upload 완료: %s", image_path)
         return 0
 
     except Exception as e:
         LOG.exception("[FAIL] stage=%s err=%r", stage, e)
-
-        if dry_run:
-            LOG.info("[DRY-RUN] 실패해도 알림은 생략")
-            return 1
 
         send_pushover_emergency(
             title="[AC] Capture job FAILED",

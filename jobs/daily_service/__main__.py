@@ -141,33 +141,37 @@ def _safe_get_target(purpose: str) -> Optional[TelegramTarget]:
 
 
 def main() -> int:
-    """DailyService 모니터 진입점. argparse로 ``--dry-run``을 받는다."""
+    """DailyService 모니터 진입점. ``--headless/--no-headless``로 헤드리스를 토글."""
     parser = argparse.ArgumentParser(description="SDS daily service monitor")
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="로그인/세션 확인까지만 수행하고 카운트 파싱·알림은 생략한다.",
+        "--headless",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="브라우저 헤드리스 여부. 미지정 시 settings.yaml 을 따른다.",
     )
     args = parser.parse_args()
-    dry_run = bool(args.dry_run)
+
+    # CLI 인자 > settings.yaml. 둘 다 없으면 get_headless 가 에러로 죽인다.
+    headless = (
+        args.headless
+        if args.headless is not None
+        else config.get_headless("daily_service")
+    )
 
     config.ensure_dirs()
 
     stage = "init"
     start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    LOG.info("[START] daily_service run at %s dry_run=%s", start_ts, dry_run)
-
-    target_heartbeat = None if dry_run else _safe_get_target("heartbeat")
+    LOG.info("[START] daily_service run at %s headless=%s", start_ts, headless)
 
     # 매 실행 시작에 heartbeat 전송 (원본 정책).
-    if dry_run:
-        LOG.info("[DRY-RUN] heartbeat 전송 생략")
-    elif target_heartbeat is not None:
+    target_heartbeat = _safe_get_target("heartbeat")
+    if target_heartbeat is not None:
         send_heartbeat(target_heartbeat, source="daily_service")
 
     try:
         with sync_browser(
-            headless=config.get_headless("daily_service"),
+            headless=headless,
             storage_state=STATE_AUTH if STATE_AUTH.exists() else None,
         ) as (_browser, context, page):
 
@@ -197,10 +201,6 @@ def main() -> int:
             else:
                 LOG.info("세션 유효 (로그인 불필요)")
 
-            if dry_run:
-                LOG.info("[DRY-RUN] 로그인까지 확인 완료, 카운트 파싱/알림 생략")
-                return 0
-
             stage = "check_abnormal"
             LOG.info("[STAGE] %s", stage)
             abnormal_count = check_abnormal_service_count(page)
@@ -221,10 +221,6 @@ def main() -> int:
     except Exception as e:
         # 파일 로그에 traceback까지 남긴다.
         LOG.exception("[FAIL] stage=%s err=%r", stage, e)
-
-        if dry_run:
-            LOG.info("[DRY-RUN] 실패해도 알림은 생략")
-            return 1
 
         send_pushover_emergency(
             title="🚨 SDS 모니터링 실패",

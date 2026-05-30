@@ -15,20 +15,17 @@ scripts\zenius.bat
 scripts\daily_service.bat
 scripts\jennifer.bat
 scripts\capture.bat
-scripts\server.bat           # 폴더 "8 전면" 하드코딩 — 본 파일 편집해서 다른 폴더 추가/변경 가능
-
-# dry-run (로그인까지만, 알림 미전송)
-scripts\zenius-dry-run.bat
-scripts\daily_service-dry-run.bat
-scripts\jennifer-dry-run.bat
-scripts\capture-dry-run.bat
-scripts\server-dry-run.bat
+scripts\server.bat           # 폴더 "8 전면"/"8 후면" 하드코딩 — 본 파일 편집해서 변경 가능
 
 # capture baseline 1회 생성 (운영 사이트 4개가 좌측 모니터에 떠 있어야 OK)
 scripts\capture-baseline.bat
 ```
 
-bat 들은 모두 `chcp 65001` 로 UTF-8 콘솔 설정 + 본 bat 위치 기준으로 자동으로 프로젝트 루트로 cd → cwd 가 어디든 동일하게 동작. 추가 인자가 필요하면 그대로 뒤에 붙이면 된다 (예: `scripts\server.bat --no-submit`).
+> 개별 `scripts\<job>.bat` 은 디버그용으로 `--no-headless`(헤드풀)를 박아둔다.
+> 운영 루프(`runner.bat`)는 토글을 박지 않으므로 `config/settings.yaml` 을 따른다.
+> `--dry-run` 전용 bat 은 폐지됐다(dry-run 자체가 사라짐).
+
+bat 들은 모두 `chcp 65001` 로 UTF-8 콘솔 설정 + 본 bat 위치 기준으로 자동으로 프로젝트 루트로 cd → cwd 가 어디든 동일하게 동작. 추가 인자가 필요하면 그대로 뒤에 붙이면 된다 (예: `scripts\server.bat --submit`).
 
 bat 없이 직접 실행:
 
@@ -97,7 +94,7 @@ kworks:
   target_title: "2026.05.30(토) 야간 OP관제 일일보고"
 
 # jobs.server one_time_list 의 times. 비어 있으면 jobs.yaml 의 server.times 폴백.
-# 상대 폴더명은 jobs/server/images/ 기준으로 해석된다(절대경로도 그대로 지원).
+# --folder 는 jobs/server/images/ 기준 상대 폴더명만 받는다(절대경로 거부).
 server_times:
   - at: "2026-05-30 01:32"
     args:
@@ -115,30 +112,30 @@ server_times:
 
 우선순위: **CLI 인자 > daily.yaml**. 즉 수동 실행 시 `--target-title "..."` 를 주면 그 값이 이긴다.
 
-## 2) 개별 job 수동 실행 / dry-run
+## 2) 개별 job 수동 실행 / 점검
 
-각 job 은 단독 실행 가능. dry-run 은 로그인까지만 도달하고 알림/외부 작업을 모두 생략한다.
+`--dry-run` 은 폐지됐다. 점검은 동작 토글로 한다(우선순위 `CLI 인자 > settings.yaml`).
+비업로드형은 `--no-headless` 로 헤드풀 실행해 눈으로 확인하고, 업로드형은
+`--no-submit` 으로 Enter 최종등록 직전까지(첨부 포함) 수행한다.
 
 ```powershell
-# 셰이크다운: 자격증명·세션·페이지 진입까지만 검증
-.\.venv\Scripts\python.exe -m jobs.zenius --dry-run
-.\.venv\Scripts\python.exe -m jobs.daily_service --dry-run
-.\.venv\Scripts\python.exe -m jobs.jennifer --dry-run
+# 비업로드형: 헤드풀로 로그인/세션/페이지 진입 확인 (실패 시 평소처럼 알림 전송됨)
+.\.venv\Scripts\python.exe -m jobs.zenius --no-headless
+.\.venv\Scripts\python.exe -m jobs.daily_service --no-headless
+.\.venv\Scripts\python.exe -m jobs.jennifer --no-headless
 
-# server upload (folder/target-title 필수). 폴더는 상대경로면 jobs/server/images/ 기준,
-# 절대경로면 그대로. 아래 예는 jobs/server/images/8 전면, 8 후면 으로 해석된다.
+# server upload (folder/target-title 필수). --folder 는 jobs/server/images/ 기준
+# 상대 폴더명만 받는다(절대경로 거부). 아래 예는 jobs/server/images/8 전면, 8 후면.
+# --no-submit 으로 첨부까지만(Enter 등록은 생략), --no-headless 로 눈으로 확인.
 .\.venv\Scripts\python.exe -m jobs.server `
   --folder "8 전면" --folder "8 후면" `
-  --target-title "2026.05.29(금) 야간 OP관제 일일보고" --dry-run
+  --target-title "2026.05.29(금) 야간 OP관제 일일보고" --no-submit --no-headless
 
 # capture baseline (운영 사이트 4개가 좌측 모니터에 떠 있을 때 1회)
 .\.venv\Scripts\python.exe -m jobs.capture --make-baseline
 
-# capture full path (--target-title 필요)
-.\.venv\Scripts\python.exe -m jobs.capture --target-title "..." --dry-run
-
-# capture 디버그: 로그인 + 폼 확보까지만 (업로드/submit/Pushover 모두 생략)
-.\.venv\Scripts\python.exe -m jobs.capture --target-title "..." --no-upload
+# capture 디버그: 첨부까지만(Enter 등록 생략) + 헤드풀
+.\.venv\Scripts\python.exe -m jobs.capture --target-title "..." --no-submit --no-headless
 ```
 
 각 job 의 인자 전체는 `--help` 로 확인.
@@ -237,15 +234,17 @@ server_times:
    - one_time_list: 해당 entry 가 이미 done 으로 찍혀 있는지 (at + grace 지나서 자동 done 됐을 수도).
 3. `running_pid` 에 좀비 PID 가 남아 있는지 (`state/runner.json`). runner 가 자동 정리하지만, 외부에서 강제 종료된 경우 즉시 안 보일 수 있음.
 
-### dry-run 으로 좁히기
+### 헤드풀로 좁히기
 
-job 자체에 문제가 의심되면 runner 를 멈추고 해당 job 만 dry-run 해본다.
+job 자체에 문제가 의심되면 runner 를 멈추고 해당 job 만 헤드풀로 1회 돌려본다.
 
 ```powershell
-.\.venv\Scripts\python.exe -m jobs.<name> --dry-run
+.\.venv\Scripts\python.exe -m jobs.<name> --no-headless
+# 업로드형이면 Enter 등록 직전까지만:
+.\.venv\Scripts\python.exe -m jobs.server --folder "8 전면" --no-submit --no-headless
 ```
 
-로그인까지 도달하면 자격증명·셀렉터는 일단 OK. 그 다음 정상 모드로 1회 수동 실행해 어디서 막히는지 본다 (`stage=` 로그 + 알림 메시지의 `stage=...`).
+브라우저 화면 + `stage=` 로그로 어디서 막히는지 본다(실패 시 알림 메시지에도 `stage=...` 포함). 로그인까지 도달하면 자격증명·셀렉터는 일단 OK.
 
 ### `jobs.yaml` 검증 에러 메시지
 

@@ -79,7 +79,7 @@
 - 현재 5개: `zenius`, `daily_service`, `jennifer`, `server`, `capture` (`window_utils.py` 동반).
 - 모든 job 은 다음을 따른다:
   - `sys.path` 부트스트랩 (파일 최상단)
-  - `argparse` + `--dry-run`
+  - `argparse` + `--headless`/`--no-headless` (업로드형은 `--submit`/`--no-submit` 도)
   - `stage` 변수 진입 로그
   - 실패 시 마지막 stage 를 알림 메시지에 포함
   - 상태 파일은 `config.STATE_DIR`, 로그는 `config.LOG_DIR`, 그 외 산출물은 `config.BASE_DIR/captures/<job>/`.
@@ -95,16 +95,17 @@
 ### config/
 - `jobs.yaml` — runner 일정 **구조** (모드/모듈/주기/timeout). 거의 안 바뀜. git 추적.
 - `daily.yaml` — 매일 갱신값 (run_until, KWorks 자격증명·target_title, server.times). git ignore. `.env` 와 동격이라 비밀값 OK.
+- `settings.yaml` — 동작 토글 (job 별 headless / submit_by_enter). git 추적, 비밀 금지. 폴백 없음(부재/스키마 위반 시 에러).
 - `jennifer_sites.json` — Jennifer 사이트 목록 (id 까지만, pw 는 .env).
 
 ## 새 job 의 정형 흐름
 
 ```
-1. argparse 로 인자 수신 (--dry-run 포함)
-2. config.ensure_dirs()
-3. stage = "init" → "credentials" / "resolve_target_title" → "kworks_login" → ...
-4. dry-run 분기: 로그인/세션 확인까지만 수행 후 종료
-5. 예외 핸들러: 마지막 stage 를 포함한 Pushover/Telegram 알림 (dry-run 에서는 알림 생략)
+1. argparse 로 인자 수신 (--headless/--no-headless 등; default=None)
+2. headless = args.headless if not None else config.get_headless("<job>")  (CLI > settings, 폴백 없음)
+3. config.ensure_dirs()
+4. stage = "init" → "credentials" / "resolve_target_title" → "kworks_login" → ...
+5. 예외 핸들러: 마지막 stage 를 포함한 Pushover/Telegram 알림 (항상 전송)
 6. finally 에서 [END] 로그
 ```
 

@@ -1,31 +1,30 @@
-"""``config/settings.yaml`` 로더 — 동작 토글(headless / submit 등)의 단일 소스.
+"""``config/settings.yaml`` 로더 — 동작 토글(headless / submit_by_enter)의 단일 소스.
 
 본 파일의 위상:
     - ``.env`` / ``daily.yaml`` 과 달리 git 추적 대상이며, 비밀값을 절대 담지
       않는다(거의 안 바뀌는 동작 스위치만).
-    - 우선순위 규약: ``CLI 인자 > config/settings.yaml > 코드 기본값``.
+    - 우선순위 규약: ``CLI 인자 > config/settings.yaml``. settings.yaml 에 값이
+      없고 CLI 로도 주지 않으면 해당 job 은 명확한 에러로 종료한다(**폴백 없음**).
 
-스키마(부분 입력 허용):
-    defaults:
-      headless: true
-    jobs:
-      <job_key>:
-        headless: true
-        submit_by_enter: true        # server / capture 만 의미가 있음
+스키마(전부 필수):
+    zenius:        {headless: bool}
+    daily_service: {headless: bool}
+    jennifer:      {headless: bool}
+    capture:       {headless: bool, submit_by_enter: bool}
+    server:        {headless: bool, submit_by_enter: bool}
 
-파일이 없으면 :func:`load_settings` 가 None 을 반환한다 — 호출부는 코드 기본값으로
-폴백한다. 파싱/스키마 검증에 실패해도 None + 경고 로그(파일이 운영자 수정 대상이라
-거친 실패 대신 흡수). ``common.daily`` 와 동일 패턴.
+``common.daily`` 가 파일 부재를 None 으로 흡수하는 것과 달리, 본 로더는 파일 부재 /
+파싱 실패 / 스키마 위반을 모두 **예외로 raise** 한다. 동작 토글이 정의되지 않은 채
+실행되면 안 되기 때문이다(거친 실패가 의도).
 """
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 # common.config 를 import 하지 않고 BASE_DIR 를 직접 계산 — 순환 의존 방지.
@@ -33,25 +32,34 @@ _BASE_DIR = Path(__file__).resolve().parent.parent
 SETTINGS_YAML_PATH: Path = _BASE_DIR / "config" / "settings.yaml"
 
 
-_log = logging.getLogger("common.settings")
-
-
 # ---------------------------------------------------------------------------
 # 스키마
 # ---------------------------------------------------------------------------
 
 class JobSettings(BaseModel):
-    """job 1개의 동작 토글. 모든 필드가 선택(None=미지정)."""
+    """job 1개의 동작 토글.
 
-    headless: Optional[bool] = None
+    ``headless`` 는 모든 job 필수. ``submit_by_enter`` 는 server / capture 만
+    의미가 있어 모델 수준에서는 선택이지만, 조회 헬퍼
+    (:func:`common.config.get_submit_by_enter`) 가 None 이면 에러로 죽인다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    headless: bool
     submit_by_enter: Optional[bool] = None
 
 
 class SettingsConfig(BaseModel):
-    """settings.yaml 전체 스키마."""
+    """settings.yaml 전체 스키마. 5개 job 키가 모두 필수(누락은 검증 실패)."""
 
-    defaults: JobSettings = Field(default_factory=JobSettings)
-    jobs: Dict[str, JobSettings] = Field(default_factory=dict)
+    model_config = ConfigDict(extra="forbid")
+
+    zenius: JobSettings
+    daily_service: JobSettings
+    jennifer: JobSettings
+    capture: JobSettings
+    server: JobSettings
 
 
 # ---------------------------------------------------------------------------
@@ -59,46 +67,40 @@ class SettingsConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 _cached: Optional[SettingsConfig] = None
-_already_attempted = False
 
 
-def load_settings(*, force: bool = False) -> Optional[SettingsConfig]:
-    """``config/settings.yaml`` 을 1회 로드해 캐시한다.
+def load_settings(*, force: bool = False) -> SettingsConfig:
+    """``config/settings.yaml`` 을 로드+검증해 반환한다(1회 캐시).
 
     Args:
         force: True 이면 캐시 무시하고 다시 읽는다(테스트용).
 
     Returns:
-        파일이 정상이면 :class:`SettingsConfig`. 파일이 없으면 None. 파싱/스키마
-        검증에 실패해도 None — 다만 경고 로그를 남긴다.
-    """
-    global _cached, _already_attempted
+        검증을 통과한 :class:`SettingsConfig`.
 
-    if _already_attempted and not force:
+    Raises:
+        FileNotFoundError: settings.yaml 이 없는 경우(폴백 없음).
+        RuntimeError: YAML 파싱 실패, 최상위가 dict 아님, 또는 스키마 검증 실패.
+    """
+    global _cached
+
+    if _cached is not None and not force:
         return _cached
 
-    _already_attempted = True
-
     if not SETTINGS_YAML_PATH.exists():
-        _cached = None
-        return None
+        raise FileNotFoundError(
+            f"settings.yaml 없음: {SETTINGS_YAML_PATH} "
+            "(동작 토글 파일은 폴백 없이 필수. CLI 로 --headless 등을 명시하면 "
+            "본 파일 없이도 실행 가능)."
+        )
 
     try:
         raw = yaml.safe_load(SETTINGS_YAML_PATH.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
-        _log.warning("settings.yaml 파싱 실패 — 기본값으로 폴백: %r", e)
-        _cached = None
-        return None
-
-    # 빈 파일은 정상 — 모든 값이 기본(빈 dict / None) 으로 셋업된다.
-    if raw is None:
-        _cached = SettingsConfig()
-        return _cached
+        raise RuntimeError(f"settings.yaml 파싱 실패: {e!r}") from e
 
     if not isinstance(raw, dict):
-        _log.warning("settings.yaml 최상위가 dict 아님 — 기본값으로 폴백")
-        _cached = None
-        return None
+        raise RuntimeError("settings.yaml 최상위가 dict 가 아닙니다.")
 
     try:
         _cached = SettingsConfig.model_validate(raw)
@@ -107,10 +109,8 @@ def load_settings(*, force: bool = False) -> Optional[SettingsConfig]:
             f"  - {'.'.join(str(x) for x in err['loc'])}: {err['msg']}"
             for err in e.errors()
         )
-        _log.warning(
-            "settings.yaml 스키마 검증 실패 — 기본값으로 폴백:\n%s", details
-        )
-        _cached = None
-        return None
+        raise RuntimeError(
+            f"settings.yaml 스키마 검증 실패:\n{details}"
+        ) from e
 
     return _cached

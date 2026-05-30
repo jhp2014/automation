@@ -368,7 +368,7 @@ def _get_metrics_with_refresh(popup_page: Page, login_type: str) -> Dict[str, in
 
 def _check_one_site(
     site: Dict[str, str],
-    dry_run: bool,
+    headless: bool,
     stage_holder: List[str],
 ) -> None:
     """사이트 하나를 점검한다.
@@ -377,7 +377,7 @@ def _check_one_site(
 
     Args:
         site: 사이트 dict (``name/url/id/login_type``).
-        dry_run: True이면 세션 확인/로그인까지만 수행.
+        headless: 브라우저 헤드리스 여부(호출부에서 해석된 값).
         stage_holder: 호출부 main 의 ``stage`` 변수를 공유하기 위한 1-원소 리스트
             (예외 핸들러에서 최종 stage 를 출력해야 하므로).
 
@@ -393,8 +393,6 @@ def _check_one_site(
     state_path = _session_path(name)
     storage_state_arg = state_path if state_path.exists() else None
 
-    headless = config.get_headless("jennifer")
-
     with sync_browser(
         headless=headless,
         storage_state=storage_state_arg,
@@ -409,10 +407,6 @@ def _check_one_site(
         stage_holder[0] = f"[{name}] ensure_login"
         LOG.info("[STAGE] %s", stage_holder[0])
         _ensure_login(context, page, site)
-
-        if dry_run:
-            LOG.info("[DRY-RUN] [%s] 세션 확인/로그인 완료, 이후 단계 생략", name)
-            return
 
         stage_holder[0] = f"[{name}] open_dashboard_popup"
         LOG.info("[STAGE] %s", stage_holder[0])
@@ -440,9 +434,10 @@ def _check_one_site(
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Jennifer 통합 점검 (Fail-Fast)")
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="각 사이트에서 세션 확인/로그인까지만 수행하고 종료",
+        "--headless",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="브라우저 헤드리스 여부. 미지정 시 settings.yaml 을 따른다.",
     )
     return parser.parse_args()
 
@@ -450,14 +445,19 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     """Jennifer job 진입점."""
     args = _parse_args()
-    dry_run = bool(args.dry_run)
+
+    # CLI 인자 > settings.yaml. 둘 다 없으면 get_headless 가 에러로 죽인다.
+    headless = (
+        args.headless
+        if args.headless is not None
+        else config.get_headless("jennifer")
+    )
 
     config.ensure_dirs()
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
     start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    LOG.info("[START] jennifer 통합 점검 at %s dry_run=%s headless=%s",
-             start_ts, dry_run, config.get_headless("jennifer"))
+    LOG.info("[START] jennifer 통합 점검 at %s headless=%s", start_ts, headless)
 
     # 예외 핸들러에서 마지막 stage 를 보기 위한 1-원소 holder.
     stage_holder: List[str] = ["init"]
@@ -470,7 +470,7 @@ def main() -> int:
                  len(sites), [s["name"] for s in sites])
 
         for site in sites:
-            _check_one_site(site, dry_run, stage_holder)
+            _check_one_site(site, headless, stage_holder)
 
         LOG.info("[END] 모든 사이트 정상 완료")
         return 0
@@ -478,10 +478,6 @@ def main() -> int:
     except Exception as e:
         last_stage = stage_holder[0]
         LOG.exception("[FAIL] stage=%s err=%r", last_stage, e)
-
-        if dry_run:
-            LOG.info("[DRY-RUN] 실패해도 알림은 생략")
-            return 1
 
         # Fail-Fast: 한 번만 Pushover.
         send_pushover_emergency(

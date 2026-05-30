@@ -471,29 +471,33 @@ def _safe_get_target(purpose: str) -> Optional[TelegramTarget]:
 
 
 def main() -> int:
-    """Zenius 모니터 진입점. argparse로 ``--dry-run``을 받는다."""
+    """Zenius 모니터 진입점. ``--headless/--no-headless`` 를 받는다."""
     parser = argparse.ArgumentParser(description="Zenius EMS monitor")
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="로그인까지만 수행하고 스캔/알림은 생략한다.",
+        "--headless",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="브라우저 헤드리스 여부. 미지정 시 settings.yaml 의 zenius.headless 사용.",
     )
     args = parser.parse_args()
-    dry_run = bool(args.dry_run)
+
+    # 우선순위: CLI > settings.yaml(폴백 없음 — 둘 다 없으면 조회에서 raise).
+    headless = (
+        args.headless if args.headless is not None
+        else config.get_headless("zenius")
+    )
 
     config.ensure_dirs()
 
     stage = "init"
     start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    LOG.info("[START] zenius run at %s dry_run=%s", start_ts, dry_run)
+    LOG.info("[START] zenius run at %s headless=%s", start_ts, headless)
 
-    target_report = None if dry_run else _safe_get_target("report")
-    target_heartbeat = None if dry_run else _safe_get_target("heartbeat")
+    target_report = _safe_get_target("report")
+    target_heartbeat = _safe_get_target("heartbeat")
 
-    # heartbeat: 매 실행 시작에 전송 (every_run 모드).
-    if dry_run:
-        LOG.info("[DRY-RUN] heartbeat 전송 생략")
-    elif target_heartbeat is not None:
+    # heartbeat: 매 실행 시작에 전송 (every_run 정책).
+    if target_heartbeat is not None:
         send_telegram_message(
             target_heartbeat,
             f"[HB:start] zenius running - {start_ts}",
@@ -503,7 +507,7 @@ def main() -> int:
 
     try:
         with sync_browser(
-            headless=config.get_headless("zenius"),
+            headless=headless,
             storage_state=STATE_AUTH if STATE_AUTH.exists() else None,
             window_size=(BROWSER_WINDOW_WIDTH, BROWSER_WINDOW_HEIGHT),
         ) as (_browser, context, page):
@@ -513,10 +517,6 @@ def main() -> int:
             user_id, user_pw = _read_credentials()
             ensure_logged_in_and_save(context, page, user_id, user_pw)
             LOG.info("[OK] 로그인/세션 확보 완료")
-
-            if dry_run:
-                LOG.info("[DRY-RUN] 로그인까지 확인 완료, 스캔/알림 생략")
-                return 0
 
             stage = "open_ems"
             LOG.info("[STAGE] %s", stage)
@@ -595,10 +595,6 @@ def main() -> int:
     except Exception as e:
         # 파일 로그에 traceback까지 남긴다.
         LOG.exception("[FAIL] stage=%s err=%r", stage, e)
-
-        if dry_run:
-            LOG.info("[DRY-RUN] 실패해도 알림은 생략")
-            return 1
 
         # 로그인/권한 실패는 더 명확한 제목으로.
         title = (

@@ -10,7 +10,7 @@ if not exist "%PY%" (
     exit /b 1
 )
 cd /d "%~dp0.."
-"%PY%" -m jobs.daily_service %*
+"%PY%" -m jobs.daily_service --no-headless %*
 set "RC=%errorlevel%"
 echo.
 echo (exit code: %RC%)

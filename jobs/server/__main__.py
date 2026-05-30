@@ -46,8 +46,8 @@ KWORKS_URL = "https://kworks.kyowon.co.kr/"
 # 업로드 대상 이미지 확장자(원본과 동일).
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
-# server 이미지 입력 폴더 기본 루트. --folder 가 상대경로면 이 디렉터리 기준으로
-# 합성한다(규약 v1.1: cwd 사용 금지). 절대경로는 그대로 존중.
+# server 이미지 입력 폴더 루트. --folder 는 이 디렉터리 기준의 상대 폴더명만
+# 받는다(규약 v1.1: cwd 사용 금지). 절대경로는 거부한다.
 SERVER_IMAGES_DIR = config.BASE_DIR / "jobs" / "server" / "images"
 
 LOG = get_logger("jobs.server", "server.log")
@@ -126,7 +126,7 @@ def _parse_args() -> argparse.Namespace:
 
     Returns:
         ``argparse.Namespace``: folder(list[str]), target_title(str),
-        no_submit(bool), dry_run(bool).
+        submit(Optional[bool]), headless(Optional[bool]).
     """
     parser = argparse.ArgumentParser(description="KWorks server upload job")
     parser.add_argument(
@@ -135,9 +135,8 @@ def _parse_args() -> argparse.Namespace:
         default=[],
         required=True,
         help=(
-            "업로드할 이미지 폴더. 여러 번 지정 가능. "
-            "상대경로는 jobs/server/images 기준, 절대경로는 그대로 사용. "
-            "예: --folder \"8 전면\" --folder \"8 후면\""
+            "업로드할 이미지 폴더명(jobs/server/images 기준 상대명). 여러 번 지정 가능. "
+            "절대경로는 거부한다. 예: --folder \"8 전면\" --folder \"8 후면\""
         ),
     )
     parser.add_argument(
@@ -151,40 +150,44 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--no-submit",
-        action="store_true",
-        help="Enter 등록을 생략한다(첨부만, 등록은 사용자가 직접).",
+        "--submit",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="업로드 후 Enter 최종등록 여부. 미지정 시 settings.yaml 을 따른다.",
     )
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="첫 폴더에 대해 로그인+폼 확보까지만 수행하고 종료.",
+        "--headless",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="브라우저 헤드리스 여부. 미지정 시 settings.yaml 을 따른다.",
     )
     return parser.parse_args()
 
 
 def _resolve_folder(arg: str) -> Path:
-    """CLI에서 받은 폴더 인자를 절대경로화하고 디렉터리 검증한다.
+    """CLI에서 받은 폴더명을 ``SERVER_IMAGES_DIR`` 기준 절대경로로 변환·검증한다.
 
     해석 규칙(규약 v1.1: cwd 사용 금지):
-        - 절대경로 → 그대로 사용
-        - 상대경로 → ``SERVER_IMAGES_DIR`` (``jobs/server/images``) 기준으로 합성
+        - 상대 폴더명만 허용 → ``SERVER_IMAGES_DIR`` (``jobs/server/images``) 기준 합성
+        - 절대경로는 거부
 
     Args:
-        arg: 사용자가 ``--folder``로 넘긴 문자열.
+        arg: 사용자가 ``--folder``로 넘긴 폴더명.
 
     Returns:
         절대경로화된 ``Path``.
 
     Raises:
+        ValueError: 절대경로가 들어온 경우.
         FileNotFoundError: 경로가 존재하지 않는 경우.
         NotADirectoryError: 경로가 디렉터리가 아닌 경우.
     """
     raw = Path(arg)
     if raw.is_absolute():
-        p = raw.resolve()
-    else:
-        p = (SERVER_IMAGES_DIR / raw).resolve()
+        raise ValueError(
+            f"--folder 는 jobs/server/images 기준 상대 폴더명만 허용합니다(절대경로 거부): {arg}"
+        )
+    p = (SERVER_IMAGES_DIR / raw).resolve()
     if not p.exists():
         raise FileNotFoundError(f"폴더 없음: {p}")
     if not p.is_dir():
@@ -199,23 +202,27 @@ def _resolve_folder(arg: str) -> Path:
 def main() -> int:
     """서버 업로드 job 진입점."""
     args = _parse_args()
-    dry_run = bool(args.dry_run)
 
-    # 우선순위: CLI --no-submit (지정 시 강제 False) > settings.yaml.
-    # store_true 라 "미지정"과 "false"를 구분 못 하므로 settings 를 기본값으로 두고
-    # CLI 가 지정된 경우에만 덮어쓴다.
-    submit = config.get_submit_by_enter("server")
-    if args.no_submit:
-        submit = False
+    # 우선순위: CLI 인자 > settings.yaml. 미지정(None)이면 settings.yaml 을 따른다.
+    submit = (
+        args.submit
+        if args.submit is not None
+        else config.get_submit_by_enter("server")
+    )
+    headless = (
+        args.headless
+        if args.headless is not None
+        else config.get_headless("server")
+    )
 
     config.ensure_dirs()
 
     stage = "init"
     start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     LOG.info(
-        "[START] server upload at %s dry_run=%s submit=%s folders=%d",
+        "[START] server upload at %s headless=%s submit=%s folders=%d",
         start_ts,
-        dry_run,
+        headless,
         submit,
         len(args.folder),
     )
@@ -258,7 +265,7 @@ def main() -> int:
         user_id, user_pw = _read_credentials()
 
         with sync_browser(
-            headless=config.get_headless("server"),
+            headless=headless,
         ) as (_browser, _context, page):
 
             stage = "kworks_login"
@@ -280,11 +287,6 @@ def main() -> int:
                 LOG.info("[STAGE] %s", stage)
                 form = client.open_task_detail(target_title)
 
-                if dry_run:
-                    # 첫 폴더에서 폼 확보까지만 도달 후 종료한다(원본 spec).
-                    LOG.info("[DRY-RUN] 로그인+폼 확보 완료, 업로드/알림 생략")
-                    return 0
-
                 stage = f"type_comment[{idx}]"
                 LOG.info("[STAGE] %s", stage)
                 client.type_comment(form, folder.name)
@@ -298,7 +300,7 @@ def main() -> int:
                     LOG.info("[STAGE] %s", stage)
                     client.submit(form)
                 else:
-                    LOG.info("[INFO] --no-submit -> Enter 등록 생략")
+                    LOG.info("[INFO] submit=False -> Enter 등록 생략")
 
                 LOG.info("[OK] 폴더 처리 완료: %s", folder)
 
@@ -307,10 +309,6 @@ def main() -> int:
 
     except Exception as e:
         LOG.exception("[FAIL] stage=%s err=%r", stage, e)
-
-        if dry_run:
-            LOG.info("[DRY-RUN] 실패해도 알림은 생략")
-            return 1
 
         send_pushover_emergency(
             title="[KWorks] 서버 업로드 실패",
