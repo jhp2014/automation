@@ -20,6 +20,7 @@
   {
     "name": "Jennifer_redpen",
     "url": "https://apm.redpenai.com/dashboard/realtimeAdmin",
+    "login_url": "https://apm.redpenai.com/login",
     "id": "admin",
     "login_type": "new",
     "ignore_https_errors": true

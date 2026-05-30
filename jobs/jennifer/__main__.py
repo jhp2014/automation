@@ -33,6 +33,7 @@ from typing import Dict, List, Optional
 
 from playwright.sync_api import (
     BrowserContext,
+    Error as PWError,
     Page,
     TimeoutError as PWTimeoutError,
 )
@@ -203,7 +204,8 @@ def _ensure_login(
     Args:
         context: 현재 BrowserContext.
         page: 현재 Page(아직 ``goto`` 전이어야 함).
-        site: 사이트 dict (``name/url/id/login_type``).
+        site: 사이트 dict (``name/url/id/login_type``). 선택 키 ``login_url`` 이
+            있으면 대시보드 진입 실패 시 로그인 페이지로 직접 폴백한다.
 
     Raises:
         playwright.sync_api.TimeoutError: 페이지 진입(goto) 자체가 실패한 경우.
@@ -212,9 +214,22 @@ def _ensure_login(
     name = site["name"]
     url = site["url"]
     login_type = site["login_type"]
+    login_url = site.get("login_url")
     wait_sel = J.WAIT_SELECTOR_BY_TYPE[login_type]
 
-    page.goto(url, timeout=GOTO_TIMEOUT_MS)
+    try:
+        page.goto(url, timeout=GOTO_TIMEOUT_MS)
+    except PWError as e:
+        if not login_url:
+            raise
+        LOG.warning(
+            "[%s] 대시보드 진입 실패 -> 로그인 URL 직접 진입: url=%s login_url=%s err=%r",
+            name,
+            url,
+            login_url,
+            e,
+        )
+        page.goto(login_url, timeout=GOTO_TIMEOUT_MS)
 
     # 세션 유효성: 대시보드 대기 셀렉터가 5초 안에 뜨면 유효.
     try:
@@ -223,6 +238,13 @@ def _ensure_login(
         return
     except PWTimeoutError:
         LOG.warning("[%s] 세션 만료/로그인 필요 -> 재로그인 진행", name)
+        if login_url and page.locator(J.SEL_INPUT_ID).count() == 0:
+            LOG.warning(
+                "[%s] 로그인 폼 미감지 -> 로그인 URL 직접 재진입: login_url=%s",
+                name,
+                login_url,
+            )
+            page.goto(login_url, timeout=GOTO_TIMEOUT_MS)
 
     pw = _read_password(name)
     _do_login(page, login_type, site["id"], pw)
