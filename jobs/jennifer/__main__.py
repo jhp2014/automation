@@ -196,7 +196,7 @@ def _ensure_login(
     context: BrowserContext,
     page: Page,
     site: Dict[str, str],
-) -> None:
+) -> Page:
     """대시보드 진입을 보장한다. 세션이 살아있으면 그대로, 아니면 재로그인.
 
     재로그인 후 ``save_storage_state`` 로 세션 파일을 갱신한다.
@@ -205,7 +205,11 @@ def _ensure_login(
         context: 현재 BrowserContext.
         page: 현재 Page(아직 ``goto`` 전이어야 함).
         site: 사이트 dict (``name/url/id/login_type``). 선택 키 ``login_url`` 이
-            있으면 대시보드 진입 실패 시 로그인 페이지로 직접 폴백한다.
+            있으면 대시보드 진입 실패 시 새 Page로 로그인 페이지에 직접 폴백한다.
+
+    Returns:
+        대시보드 진입이 끝난 Page. fallback 중 새 Page를 만들 수 있으므로 호출부는
+        반환값을 이후 단계에 사용해야 한다.
 
     Raises:
         playwright.sync_api.TimeoutError: 페이지 진입(goto) 자체가 실패한 경우.
@@ -223,19 +227,25 @@ def _ensure_login(
         if not login_url:
             raise
         LOG.warning(
-            "[%s] 대시보드 진입 실패 -> 로그인 URL 직접 진입: url=%s login_url=%s err=%r",
+            "[%s] 대시보드 진입 실패 -> 새 페이지로 로그인 URL 직접 진입: url=%s login_url=%s err=%r",
             name,
             url,
             login_url,
             e,
         )
+        old_page = page
+        page = context.new_page()
         page.goto(login_url, timeout=GOTO_TIMEOUT_MS)
+        try:
+            old_page.close()
+        except Exception as close_err:
+            LOG.warning("[%s] 실패한 페이지 close 무시: err=%r", name, close_err)
 
     # 세션 유효성: 대시보드 대기 셀렉터가 5초 안에 뜨면 유효.
     try:
         page.wait_for_selector(wait_sel, timeout=SESSION_CHECK_TIMEOUT_MS)
         LOG.info("[%s] 기존 세션 유효", name)
-        return
+        return page
     except PWTimeoutError:
         LOG.warning("[%s] 세션 만료/로그인 필요 -> 재로그인 진행", name)
         if login_url and page.locator(J.SEL_INPUT_ID).count() == 0:
@@ -251,6 +261,7 @@ def _ensure_login(
 
     save_storage_state(context, _session_path(name))
     LOG.info("[%s] 세션 저장: %s", name, _session_path(name))
+    return page
 
 
 # ---------------------------------------------------------------------------
@@ -435,7 +446,7 @@ def _check_one_site(
 
         stage_holder[0] = f"[{name}] ensure_login"
         LOG.info("[STAGE] %s", stage_holder[0])
-        _ensure_login(context, page, site)
+        page = _ensure_login(context, page, site)
 
         stage_holder[0] = f"[{name}] open_dashboard_popup"
         LOG.info("[STAGE] %s", stage_holder[0])
