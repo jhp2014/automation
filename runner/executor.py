@@ -22,7 +22,7 @@ from common.logging import get_logger
 from .config import JobConfig, OneTimeEntry
 
 
-_log = get_logger("runner.executor")
+_log = get_logger("runner.executor", "runner.log")
 
 
 # ---------------------------------------------------------------------------

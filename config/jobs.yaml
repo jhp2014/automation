@@ -43,7 +43,7 @@ jobs:
     module: jobs.jennifer
     mode: interval
     interval_sec: 600
-    timeout_sec: 120
+    timeout_sec: 180
 
   # --- AC 캡처 + KWorks 업로드 (매 시간 [0, 600s] 무작위, grace 60s) ---
   # target_title 은 daily.yaml 의 kworks.target_title 에서 읽는다.
