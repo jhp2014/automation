@@ -46,6 +46,10 @@ KWORKS_URL = "https://kworks.kyowon.co.kr/"
 # 업로드 대상 이미지 확장자(원본과 동일).
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
+# server 이미지 입력 폴더 기본 루트. --folder 가 상대경로면 이 디렉터리 기준으로
+# 합성한다(규약 v1.1: cwd 사용 금지). 절대경로는 그대로 존중.
+SERVER_IMAGES_DIR = config.BASE_DIR / "jobs" / "server" / "images"
+
 LOG = get_logger("jobs.server", "server.log")
 
 
@@ -130,7 +134,11 @@ def _parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         required=True,
-        help="업로드할 이미지 폴더. 여러 번 지정 가능. 예: --folder A --folder B",
+        help=(
+            "업로드할 이미지 폴더. 여러 번 지정 가능. "
+            "상대경로는 jobs/server/images 기준, 절대경로는 그대로 사용. "
+            "예: --folder \"8 전면\" --folder \"8 후면\""
+        ),
     )
     parser.add_argument(
         "--target-title",
@@ -158,6 +166,10 @@ def _parse_args() -> argparse.Namespace:
 def _resolve_folder(arg: str) -> Path:
     """CLI에서 받은 폴더 인자를 절대경로화하고 디렉터리 검증한다.
 
+    해석 규칙(규약 v1.1: cwd 사용 금지):
+        - 절대경로 → 그대로 사용
+        - 상대경로 → ``SERVER_IMAGES_DIR`` (``jobs/server/images``) 기준으로 합성
+
     Args:
         arg: 사용자가 ``--folder``로 넘긴 문자열.
 
@@ -168,7 +180,11 @@ def _resolve_folder(arg: str) -> Path:
         FileNotFoundError: 경로가 존재하지 않는 경우.
         NotADirectoryError: 경로가 디렉터리가 아닌 경우.
     """
-    p = Path(arg).resolve()
+    raw = Path(arg)
+    if raw.is_absolute():
+        p = raw.resolve()
+    else:
+        p = (SERVER_IMAGES_DIR / raw).resolve()
     if not p.exists():
         raise FileNotFoundError(f"폴더 없음: {p}")
     if not p.is_dir():
@@ -184,7 +200,13 @@ def main() -> int:
     """서버 업로드 job 진입점."""
     args = _parse_args()
     dry_run = bool(args.dry_run)
-    submit = not bool(args.no_submit)
+
+    # 우선순위: CLI --no-submit (지정 시 강제 False) > settings.yaml.
+    # store_true 라 "미지정"과 "false"를 구분 못 하므로 settings 를 기본값으로 두고
+    # CLI 가 지정된 경우에만 덮어쓴다.
+    submit = config.get_submit_by_enter("server")
+    if args.no_submit:
+        submit = False
 
     config.ensure_dirs()
 
@@ -235,7 +257,9 @@ def main() -> int:
         LOG.info("[STAGE] %s", stage)
         user_id, user_pw = _read_credentials()
 
-        with sync_browser(headless=True) as (_browser, _context, page):
+        with sync_browser(
+            headless=config.get_headless("server"),
+        ) as (_browser, _context, page):
 
             stage = "kworks_login"
             LOG.info("[STAGE] %s", stage)

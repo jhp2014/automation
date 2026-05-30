@@ -1,0 +1,23 @@
+# config/settings.yaml — 동작 토글 (거의 안 바뀜, git 추적, 비밀값 금지)
+#
+# 우선순위: CLI 인자 > 본 파일의 jobs.<name> > defaults > 코드 기본값
+#
+# headless        : 브라우저 헤드리스 여부 (false=헤드풀, 디버깅용)
+# submit_by_enter : KWorks 업로드 후 Enter 최종등록 여부 (server/capture 전용)
+
+defaults:
+  headless: true
+
+jobs:
+  zenius:
+    headless: true
+  daily_service:
+    headless: true
+  jennifer:
+    headless: true        # 캔버스 더블클릭 디버깅 시 false
+  capture:
+    headless: true
+    submit_by_enter: true
+  server:
+    headless: true
+    submit_by_enter: true

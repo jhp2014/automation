@@ -86,6 +86,11 @@ python -m playwright install --dry-run chromium     # already installed → 출�
 
 `.env` 와 `config/daily.yaml` 둘 다 git ignore. 템플릿에서 복사 후 채운다.
 
+> 참고: 동작 토글 파일 `config/settings.yaml` 은 비밀이 아니라 git 추적 대상이며,
+> 레포에 이미 들어 있다 — `.example` 을 복사할 필요가 없다. 헤드풀 전환 등은
+> 본 파일을 직접 편집하면 된다 (자세한 내용은 [02_common_api](02_common_api.md)
+> 의 `common.settings` 섹션 참고).
+
 ### 5-A) `.env` (거의 안 바뀜)
 
 ```powershell
@@ -172,7 +177,7 @@ Please create .venv and install deps. See docs/08_install.md.
   - 원격 데스크톱 세션이 끊긴 상태(콘솔이 잠겨 있음) — `mss` 가 모니터를 인식 못 함
   - WSL / Linux — `pywin32` import 실패
   - 헤드리스 가상 서버 — 디스플레이 부재로 캡처 빈 화면
-- **jennifer** 의 캔버스 더블클릭은 헤드리스에서 가끔 불안정. `jobs/jennifer/__main__.py` 상단 `HEADLESS = True` 를 `False` 로 바꾸면 헤드풀로 전환된다 (코드 흐름 동일).
+- **jennifer** 의 캔버스 더블클릭은 헤드리스에서 가끔 불안정. `config/settings.yaml` 의 `jobs.jennifer.headless` 를 `false` 로 바꾸면 헤드풀로 전환된다 (코드 흐름 동일).
 - `chcp 65001` 가 bat 첫 줄에 있어 한국어 폴더명 / 작업 제목이 cmd → Python 으로 깨지지 않는다. 콘솔 폰트가 한국어를 못 그리면 표시가 깨질 수 있지만 데이터는 정상.
 
 ## 10) 트러블슈팅 한 줄

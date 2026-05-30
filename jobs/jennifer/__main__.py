@@ -48,8 +48,8 @@ from site_selectors import jennifer as J
 # 설정 (비밀 아님)
 # ---------------------------------------------------------------------------
 
-# 좌표 더블클릭이 헤드리스에서 불안정하면 False 로 바꾼다. 코드 흐름은 동일.
-HEADLESS = True
+# 좌표 더블클릭이 헤드리스에서 불안정하면 config/settings.yaml 의 jobs.jennifer.headless
+# 를 false 로 바꾼다(코드 흐름은 동일).
 
 # fatal 임계값(원본 그대로). 초과 시 즉시 Fail-Fast.
 FATAL_THRESHOLD = 50
@@ -393,8 +393,10 @@ def _check_one_site(
     state_path = _session_path(name)
     storage_state_arg = state_path if state_path.exists() else None
 
+    headless = config.get_headless("jennifer")
+
     with sync_browser(
-        headless=HEADLESS,
+        headless=headless,
         storage_state=storage_state_arg,
     ) as (_browser, context, page):
 
@@ -455,7 +457,7 @@ def main() -> int:
 
     start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     LOG.info("[START] jennifer 통합 점검 at %s dry_run=%s headless=%s",
-             start_ts, dry_run, HEADLESS)
+             start_ts, dry_run, config.get_headless("jennifer"))
 
     # 예외 핸들러에서 마지막 stage 를 보기 위한 1-원소 holder.
     stage_holder: List[str] = ["init"]

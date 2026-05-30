@@ -126,6 +126,12 @@ if __name__ == "__main__":
 
 상대경로 사용 금지. `Path(".")` 또는 `os.getcwd()` 기반 합성 금지.
 
+## 4-A) 동작 토글은 `settings.yaml` 에서 읽기
+
+`headless`, `submit_by_enter` 같이 거의 안 바뀌는 동작 스위치는 코드 상수가 아니라
+`config/settings.yaml` 에서 `config.get_headless("<job>")` / `config.get_submit_by_enter("<job>")`
+로 조회한다. 우선순위는 `CLI 인자 > settings.yaml > 코드 기본값`.
+
 ## 5) `--dry-run` 규약
 
 - 모든 job은 `--dry-run` 플래그를 받아야 한다.

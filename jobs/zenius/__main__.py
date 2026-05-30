@@ -503,7 +503,7 @@ def main() -> int:
 
     try:
         with sync_browser(
-            headless=True,
+            headless=config.get_headless("zenius"),
             storage_state=STATE_AUTH if STATE_AUTH.exists() else None,
             window_size=(BROWSER_WINDOW_WIDTH, BROWSER_WINDOW_HEIGHT),
         ) as (_browser, context, page):

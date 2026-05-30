@@ -1,11 +1,14 @@
 """Shared configuration loaded from ``.env`` 와 ``config/daily.yaml``.
 
-두 소스의 역할 구분:
+세 소스의 역할 구분:
     - ``.env`` : 거의 안 바뀌는 비밀 (Pushover/Telegram/Supabase 토큰,
       Zenius·DailyService·Jennifer 자격증명 등). git ignore.
     - ``config/daily.yaml`` : 매일 갱신하는 값 (KWorks 자격증명·target_title,
       runner ``run_until``, ``jobs.server`` 의 ``times``). git ignore — 비밀값
       넣어도 안전.
+    - ``config/settings.yaml`` : 거의 안 바뀌는 동작 토글 (job 별 headless,
+      KWorks 업로드 후 Enter 등록 여부). **git 추적, 비밀값 금지**.
+      조회는 :func:`get_headless` / :func:`get_submit_by_enter` 헬퍼만 사용.
 
 import 만으로 부작용 없음(디렉터리 생성·네트워크 X). 디렉터리는
 :func:`ensure_dirs` 호출 시에만 생성.
@@ -21,6 +24,7 @@ from typing import List, Optional
 from dotenv import load_dotenv
 
 from .daily import DailyServerTime, load_daily
+from .settings import load_settings
 
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
@@ -118,3 +122,57 @@ def get_telegram_target(job_key: str, purpose: str) -> TelegramTarget:
         )
 
     return TelegramTarget(bot_token=bot_token, chat_id=chat_id)
+
+
+# ---------------------------------------------------------------------------
+# settings.yaml 조회 헬퍼 (동작 토글)
+# ---------------------------------------------------------------------------
+
+def get_headless(job_key: str, *, default: bool = True) -> bool:
+    """``settings.yaml`` 에서 job 의 ``headless`` 값을 조회.
+
+    조회 순서: ``jobs[job_key].headless`` → ``defaults.headless`` → ``default``.
+    settings.yaml 자체가 없거나 파싱 실패면 즉시 ``default`` 반환.
+
+    Args:
+        job_key: settings.yaml 의 jobs 키와 일치하는 문자열
+            (예: ``"zenius"``, ``"capture"``).
+        default: 어느 단계에서도 명시값이 없을 때의 코드 기본값.
+
+    Returns:
+        bool — 해석된 headless 값.
+    """
+    cfg = load_settings()
+    if cfg is None:
+        return default
+    job = cfg.jobs.get(job_key)
+    if job is not None and job.headless is not None:
+        return job.headless
+    if cfg.defaults.headless is not None:
+        return cfg.defaults.headless
+    return default
+
+
+def get_submit_by_enter(job_key: str, *, default: bool = True) -> bool:
+    """``settings.yaml`` 에서 job 의 ``submit_by_enter`` 값을 조회.
+
+    조회 순서: ``jobs[job_key].submit_by_enter`` → ``defaults.submit_by_enter``
+    → ``default``. server / capture 외 job 에는 의미가 없지만 정책상 동일한
+    조회 규칙을 사용한다.
+
+    Args:
+        job_key: settings.yaml 의 jobs 키.
+        default: 명시값이 없을 때의 코드 기본값.
+
+    Returns:
+        bool — 해석된 submit_by_enter 값.
+    """
+    cfg = load_settings()
+    if cfg is None:
+        return default
+    job = cfg.jobs.get(job_key)
+    if job is not None and job.submit_by_enter is not None:
+        return job.submit_by_enter
+    if cfg.defaults.submit_by_enter is not None:
+        return cfg.defaults.submit_by_enter
+    return default

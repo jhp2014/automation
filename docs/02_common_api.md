@@ -39,6 +39,22 @@ from common.config import get_telegram_target
 hb = get_telegram_target("zenius", "heartbeat")   # TelegramTarget(...)
 ```
 
+### `get_headless(job_key: str, *, default: bool = True) -> bool`
+`config/settings.yaml` 에서 job 의 `headless` 값을 조회. 조회 순서:
+`jobs[job_key].headless` → `defaults.headless` → `default`. 파일이 없거나 파싱
+실패면 즉시 `default` 반환.
+
+### `get_submit_by_enter(job_key: str, *, default: bool = True) -> bool`
+`config/settings.yaml` 에서 job 의 `submit_by_enter` 값을 조회. 조회 규칙은
+`get_headless` 와 동일. server / capture 외 job 에는 의미가 없다.
+
+```python
+from common import config
+with sync_browser(headless=config.get_headless("zenius")) as (_b, _c, page):
+    ...
+submit = config.get_submit_by_enter("server")
+```
+
 ---
 
 ## common.daily
@@ -64,6 +80,33 @@ class DailyConfig(BaseModel):
     run_until: str = ""   # "YYYY-MM-DD HH:MM" 또는 ""
     kworks: DailyKworks
     server_times: list[DailyServerTime] = []
+```
+
+---
+
+## common.settings
+
+`config/settings.yaml` 로더. `common.config` 가 import 시 사용한다. 외부에서 직접
+부를 일은 거의 없고, 보통 `config.get_headless` / `config.get_submit_by_enter`
+헬퍼로 조회한다.
+
+`settings.yaml` 은 **git 추적, 비밀값 금지**. `.env` / `daily.yaml` 과 달리 동작
+토글(headless / submit_by_enter)만 담는다.
+
+### `load_settings(*, force: bool = False) -> SettingsConfig | None`
+settings.yaml 을 1회 로드해 캐시. 파일이 없으면 `None`. 파싱/스키마 실패도
+`None` + 경고 로그.
+
+### pydantic 모델
+
+```python
+class JobSettings(BaseModel):
+    headless: bool | None = None
+    submit_by_enter: bool | None = None
+
+class SettingsConfig(BaseModel):
+    defaults: JobSettings
+    jobs: dict[str, JobSettings] = {}
 ```
 
 ---

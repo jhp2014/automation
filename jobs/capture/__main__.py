@@ -327,6 +327,15 @@ def _parse_args() -> argparse.Namespace:
         help="Enter 등록 생략(첨부만, 등록은 사용자가 직접).",
     )
     parser.add_argument(
+        "--no-upload",
+        action="store_true",
+        help=(
+            "캡처 + safety_check + 로그인 + 폼 확보까지만 수행하고 "
+            "댓글/업로드/submit/Pushover 를 모두 생략(디버그용). "
+            "--dry-run 보다 한 단계 더 진행하며, 실패 시 Pushover 는 보낸다."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="capture + safety_check 까지만 수행하고 업로드/알림 생략.",
@@ -338,9 +347,14 @@ def main() -> int:
     """capture job 진입점."""
     args = _parse_args()
     dry_run = bool(args.dry_run)
-    submit = not bool(args.no_submit)
+    no_upload = bool(args.no_upload)
     no_compare = bool(args.no_compare)
     make_baseline = bool(args.make_baseline)
+
+    # 우선순위: CLI --no-submit (지정 시 강제 False) > settings.yaml.
+    submit = config.get_submit_by_enter("capture")
+    if args.no_submit:
+        submit = False
 
     config.ensure_dirs()
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
@@ -348,9 +362,10 @@ def main() -> int:
     stage = "init"
     start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     LOG.info(
-        "[START] capture job at %s dry_run=%s submit=%s no_compare=%s make_baseline=%s",
+        "[START] capture job at %s dry_run=%s no_upload=%s submit=%s no_compare=%s make_baseline=%s",
         start_ts,
         dry_run,
+        no_upload,
         submit,
         no_compare,
         make_baseline,
@@ -400,7 +415,9 @@ def main() -> int:
         LOG.info("[STAGE] %s", stage)
         user_id, user_pw = _read_credentials()
 
-        with sync_browser(headless=True) as (_browser, _context, page):
+        with sync_browser(
+            headless=config.get_headless("capture"),
+        ) as (_browser, _context, page):
             stage = "kworks_login"
             LOG.info("[STAGE] %s", stage)
             client = KworksClient(page, logger=LOG)
@@ -409,6 +426,13 @@ def main() -> int:
             stage = "open_task_detail"
             LOG.info("[STAGE] %s", stage)
             form = client.open_task_detail(target_title)
+
+            if no_upload:
+                # 폼 확보까지 도달 후 의도적 종료(디버그 경로). 댓글/업로드/submit/
+                # Pushover 모두 생략. 폼 확보 도중 예외가 났다면 except 절에서
+                # 정상적으로 Pushover 가 발송된다(no_upload 가 dry_run 과 다른 점).
+                LOG.info("[NO-UPLOAD] 로그인+폼 확보 완료, 업로드/알림 생략")
+                return 0
 
             stage = "type_comment"
             LOG.info("[STAGE] %s", stage)

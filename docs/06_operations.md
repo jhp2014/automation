@@ -39,14 +39,15 @@ cd C:\Users\whdgn\Dev\kwop\automation
 
 종료: `Ctrl+C` (자식 프로세스까지 정리). 자동 종료는 [`config/daily.yaml`](../config/daily.yaml.example) 의 `run_until` (예: `"2026-05-29 08:40"`) 로 지정. 빈 문자열 또는 키 자체 생략 시 무기한 (`jobs.yaml` 의 `run_until` 폴백을 본다).
 
-## 1) 두 개의 비밀 파일 (`.env` + `config/daily.yaml`)
+## 1) 비밀/동작 파일 (`.env` + `config/daily.yaml` + `config/settings.yaml`)
 
-운영에서 다루는 비밀/매일값은 두 파일에 나뉘어 있다. 둘 다 git ignore.
+운영에서 다루는 비밀/매일값은 세 파일에 나뉘어 있다.
 
-| 파일 | 빈도 | 들어갈 값 |
-|------|------|----------|
-| `.env` | 거의 안 바뀜 | Pushover, Telegram, Supabase, 그 외 사이트별(Zenius/DailyService/Jennifer) 자격증명 |
-| `config/daily.yaml` | 매일 갱신 | `run_until`, KWorks 자격증명/제목, `jobs.server` 의 `times` |
+| 파일 | git | 빈도 | 들어갈 값 |
+|------|-----|------|----------|
+| `.env` | ignore | 거의 안 바뀜 | Pushover, Telegram, Supabase, 그 외 사이트별(Zenius/DailyService/Jennifer) 자격증명 |
+| `config/daily.yaml` | ignore | 매일 갱신 | `run_until`, KWorks 자격증명/제목, `jobs.server` 의 `times` |
+| `config/settings.yaml` | **추적** (비밀 아님) | 거의 안 바뀜 | job 별 `headless`, `submit_by_enter` 같은 동작 토글 |
 
 ### 1-A) `.env` (거의 안 바뀌는 비밀)
 
@@ -96,19 +97,20 @@ kworks:
   target_title: "2026.05.30(토) 야간 OP관제 일일보고"
 
 # jobs.server one_time_list 의 times. 비어 있으면 jobs.yaml 의 server.times 폴백.
+# 상대 폴더명은 jobs/server/images/ 기준으로 해석된다(절대경로도 그대로 지원).
 server_times:
   - at: "2026-05-30 01:32"
     args:
       - "--folder"
-      - "C:/automation/server-helper/images/8 전면"
+      - "8 전면"
       - "--folder"
-      - "C:/automation/server-helper/images/8 후면"
+      - "8 후면"
   - at: "2026-05-30 04:41"
     args:
       - "--folder"
-      - "C:/automation/server-helper/images/9 전면"
+      - "9 전면"
       - "--folder"
-      - "C:/automation/server-helper/images/9 후면"
+      - "9 후면"
 ```
 
 우선순위: **CLI 인자 > daily.yaml**. 즉 수동 실행 시 `--target-title "..."` 를 주면 그 값이 이긴다.
@@ -123,9 +125,10 @@ server_times:
 .\.venv\Scripts\python.exe -m jobs.daily_service --dry-run
 .\.venv\Scripts\python.exe -m jobs.jennifer --dry-run
 
-# server upload (folder/target-title 필수)
+# server upload (folder/target-title 필수). 폴더는 상대경로면 jobs/server/images/ 기준,
+# 절대경로면 그대로. 아래 예는 jobs/server/images/8 전면, 8 후면 으로 해석된다.
 .\.venv\Scripts\python.exe -m jobs.server `
-  --folder "C:\images\8 전면" --folder "C:\images\8 후면" `
+  --folder "8 전면" --folder "8 후면" `
   --target-title "2026.05.29(금) 야간 OP관제 일일보고" --dry-run
 
 # capture baseline (운영 사이트 4개가 좌측 모니터에 떠 있을 때 1회)
@@ -133,6 +136,9 @@ server_times:
 
 # capture full path (--target-title 필요)
 .\.venv\Scripts\python.exe -m jobs.capture --target-title "..." --dry-run
+
+# capture 디버그: 로그인 + 폼 확보까지만 (업로드/submit/Pushover 모두 생략)
+.\.venv\Scripts\python.exe -m jobs.capture --target-title "..." --no-upload
 ```
 
 각 job 의 인자 전체는 `--help` 로 확인.
@@ -173,9 +179,9 @@ server_times:
   - at: "2026-05-30 01:32"
     args:
       - "--folder"
-      - "C:/automation/server-helper/images/8 전면"
+      - "8 전면"         # 상대경로 → jobs/server/images/8 전면
       - "--folder"
-      - "C:/automation/server-helper/images/8 후면"
+      - "8 후면"
 ```
 
 - `at` 는 반드시 `YYYY-MM-DD HH:MM`. 다른 형식은 스키마 검증에서 실패한다.

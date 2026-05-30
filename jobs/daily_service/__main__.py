@@ -167,7 +167,7 @@ def main() -> int:
 
     try:
         with sync_browser(
-            headless=True,
+            headless=config.get_headless("daily_service"),
             storage_state=STATE_AUTH if STATE_AUTH.exists() else None,
         ) as (_browser, context, page):
 
