@@ -37,7 +37,7 @@ job 한 회 실행이 수행할 단계를 **stage 단위로** 기술한다. KWor
 | 인자 | 필수 | 기본 | 설명 |
 |------|------|------|------|
 | `--target-title` | 필수 | — | KWorks 작업 제목 (매일 바뀜) |
-| `--folder` | 1개 이상 필수 | — | 업로드할 폴더명 (append, jobs/server/images 기준 상대명) |
+| `--folder` | 1개 이상 필수 | — | 업로드할 폴더명 (append, screenshots/server 기준 상대명) |
 | `--submit` / `--no-submit` | 선택 | None→settings | Enter 최종등록 여부 (업로드형 전용) |
 | `--headless` / `--no-headless` | 선택 | None→settings | 헤드리스 여부 (`BooleanOptionalAction`) |
 

@@ -1,7 +1,7 @@
 @echo off
-REM server.bat - jobs.server with folder names under jobs/server/images.
+REM server.bat - jobs.server with folder names under screenshots/server.
 REM   target-title is auto-loaded from daily.yaml kworks.target_title.
-REM   Folders are relative names resolved to jobs/server/images/<name>.
+REM   Folders are relative names resolved to screenshots/server/<name>.
 chcp 65001 > nul
 setlocal
 set "PY=%~dp0..\.venv\Scripts\python.exe"

@@ -94,7 +94,7 @@ kworks:
   target_title: "2026.05.30(토) 야간 OP관제 일일보고"
 
 # jobs.server one_time_list 의 times. 비어 있으면 jobs.yaml 의 server.times 폴백.
-# --folder 는 jobs/server/images/ 기준 상대 폴더명만 받는다(절대경로 거부).
+# --folder 는 screenshots/server/ 기준 상대 폴더명만 받는다(절대경로 거부).
 server_times:
   - at: "2026-05-30 01:32"
     args:
@@ -124,8 +124,8 @@ server_times:
 .\.venv\Scripts\python.exe -m jobs.daily_service --no-headless
 .\.venv\Scripts\python.exe -m jobs.jennifer --no-headless
 
-# server upload (folder/target-title 필수). --folder 는 jobs/server/images/ 기준
-# 상대 폴더명만 받는다(절대경로 거부). 아래 예는 jobs/server/images/8 전면, 8 후면.
+# server upload (folder/target-title 필수). --folder 는 screenshots/server/ 기준
+# 상대 폴더명만 받는다(절대경로 거부). 아래 예는 screenshots/server/8 전면, 8 후면.
 # --no-submit 으로 첨부까지만(Enter 등록은 생략), --no-headless 로 눈으로 확인.
 .\.venv\Scripts\python.exe -m jobs.server `
   --folder "8 전면" --folder "8 후면" `
@@ -176,7 +176,7 @@ server_times:
   - at: "2026-05-30 01:32"
     args:
       - "--folder"
-      - "8 전면"         # 상대경로 → jobs/server/images/8 전면
+      - "8 전면"         # 상대경로 → screenshots/server/8 전면
       - "--folder"
       - "8 후면"
 ```
@@ -210,7 +210,7 @@ server_times:
 | runner 상태 | `state/runner.json` (running_pid, last_heartbeat_at) |
 | 스케줄 상태 | `state/scheduler.json` (last_run, hourly_plan, one_time_done) |
 | Jennifer 세션 | `state/jennifer/<name>_session.json` |
-| capture 산출물 | `captures/capture/` (baseline/latest/marker) |
+| capture 산출물 | `screenshots/capture/` (baseline/latest/marker) |
 
 상태 파일을 손으로 지우면 다음 tick 에 기본값으로 재생성된다.
 

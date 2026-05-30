@@ -74,8 +74,8 @@ DHASH_THRESHOLD = 7
 # --- 안전 검사 ---
 MAX_AGE_SECONDS = 300
 
-# --- 산출물 경로 (규약 v1.1: BASE_DIR/captures/<job>/ 하위) ---
-CAPTURES_DIR = config.BASE_DIR / "captures" / "capture"
+# --- 산출물 경로 ---
+SCREEN_DIR = config.BASE_DIR / "screenshots" / "capture"
 BASELINE_FILENAME = "baseline_left_monitor.png"
 LATEST_FILENAME = "latest_left_monitor.png"
 LATEST_PATH_MARKER = "latest_path.txt"
@@ -224,8 +224,8 @@ def _validate_targets_and_layout(
 
 def _write_latest_marker(image_path: Path) -> Path:
     """``LATEST_PATH_MARKER`` 파일에 이미지 절대경로를 기록하고 마커 경로 반환."""
-    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
-    marker = CAPTURES_DIR / LATEST_PATH_MARKER
+    SCREEN_DIR.mkdir(parents=True, exist_ok=True)
+    marker = SCREEN_DIR / LATEST_PATH_MARKER
     marker.write_text(str(image_path), encoding="utf-8")
     LOG.info("최신 마커 기록: %s -> %s", marker, image_path)
     return marker
@@ -249,8 +249,8 @@ def _do_capture_stage(no_compare: bool) -> Path:
     _refresh_targets_before_capture(left_rect)
     _validate_targets_and_layout(left_rect)
 
-    latest_path = CAPTURES_DIR / LATEST_FILENAME
-    baseline_path = CAPTURES_DIR / BASELINE_FILENAME
+    latest_path = SCREEN_DIR / LATEST_FILENAME
+    baseline_path = SCREEN_DIR / BASELINE_FILENAME
 
     W.capture_left_monitor(left_rect, latest_path)
     LOG.info("최신 캡처 저장: %s", latest_path)
@@ -280,7 +280,7 @@ def _do_baseline() -> Path:
 
     _validate_targets_and_layout(left_rect)
 
-    baseline_path = CAPTURES_DIR / BASELINE_FILENAME
+    baseline_path = SCREEN_DIR / BASELINE_FILENAME
     W.capture_left_monitor(left_rect, baseline_path)
     LOG.info("baseline 생성: %s", baseline_path)
     _write_latest_marker(baseline_path)
@@ -309,7 +309,7 @@ def _do_safety_check_stage() -> Path:
         RuntimeError: 마커가 없거나, 너무 오래되었거나, 가리키는 이미지가
             없거나 오래된 경우.
     """
-    marker = CAPTURES_DIR / LATEST_PATH_MARKER
+    marker = SCREEN_DIR / LATEST_PATH_MARKER
     if not marker.exists():
         raise RuntimeError(f"safety_check: 마커 없음: {marker}")
 
@@ -402,7 +402,7 @@ def main() -> int:
     )
 
     config.ensure_dirs()
-    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+    SCREEN_DIR.mkdir(parents=True, exist_ok=True)
 
     stage = "init"
     start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

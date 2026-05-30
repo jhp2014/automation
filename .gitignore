@@ -21,8 +21,11 @@ config/daily.yaml
 logs/
 state/
 captures/
-screenshots/
 *.log
+
+# Runtime screenshots by job. Keep selected .gitkeep files for folder structure.
+/screenshots/*/*
+!/screenshots/server/.gitkeep
 
 # IDE
 .idea/
@@ -32,7 +35,3 @@ screenshots/
 # OS
 Thumbs.db
 .DS_Store
-
-# Runtime input images for server upload job (keep .gitkeep for folder structure)
-/jobs/server/images/*
-!/jobs/server/images/.gitkeep

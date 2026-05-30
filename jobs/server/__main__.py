@@ -50,7 +50,7 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
 # server 이미지 입력 폴더 루트. --folder 는 이 디렉터리 기준의 상대 폴더명만
 # 받는다(규약 v1.1: cwd 사용 금지). 절대경로는 거부한다.
-SERVER_IMAGES_DIR = config.BASE_DIR / "jobs" / "server" / "images"
+SERVER_IMAGES_DIR = config.BASE_DIR / "screenshots" / "server"
 
 LOG = get_logger("jobs.server", "server.log")
 
@@ -137,7 +137,7 @@ def _parse_args() -> argparse.Namespace:
         default=[],
         required=True,
         help=(
-            "업로드할 이미지 폴더명(jobs/server/images 기준 상대명). 여러 번 지정 가능. "
+            "업로드할 이미지 폴더명(screenshots/server 기준 상대명). 여러 번 지정 가능. "
             "절대경로는 거부한다. 예: --folder \"8 전면\" --folder \"8 후면\""
         ),
     )
@@ -170,7 +170,7 @@ def _resolve_folder(arg: str) -> Path:
     """CLI에서 받은 폴더명을 ``SERVER_IMAGES_DIR`` 기준 절대경로로 변환·검증한다.
 
     해석 규칙(규약 v1.1: cwd 사용 금지):
-        - 상대 폴더명만 허용 → ``SERVER_IMAGES_DIR`` (``jobs/server/images``) 기준 합성
+        - 상대 폴더명만 허용 → ``SERVER_IMAGES_DIR`` (``screenshots/server``) 기준 합성
         - 절대경로는 거부
 
     Args:
@@ -187,7 +187,7 @@ def _resolve_folder(arg: str) -> Path:
     raw = Path(arg)
     if raw.is_absolute():
         raise ValueError(
-            f"--folder 는 jobs/server/images 기준 상대 폴더명만 허용합니다(절대경로 거부): {arg}"
+            f"--folder 는 screenshots/server 기준 상대 폴더명만 허용합니다(절대경로 거부): {arg}"
         )
     p = (SERVER_IMAGES_DIR / raw).resolve()
     if not p.exists():

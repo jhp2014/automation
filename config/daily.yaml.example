@@ -26,7 +26,7 @@ kworks:
 # 비어 있으면(빈 리스트 또는 키 자체 누락) jobs.yaml 값을 그대로 사용한다.
 # --target-title 은 daily.yaml 의 kworks.target_title 에서 자동 주입되므로
 # args 에는 --folder 만 적으면 된다.
-# --folder 는 jobs/server/images 기준 상대 폴더명만 받는다(절대경로 거부).
+# --folder 는 screenshots/server 기준 상대 폴더명만 받는다(절대경로 거부).
 server_times: []
 # 예시 (필요 시 위 빈 리스트 대신 사용):
 # server_times:
