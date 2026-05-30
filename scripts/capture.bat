@@ -10,7 +10,7 @@ if not exist "%PY%" (
     exit /b 1
 )
 cd /d "%~dp0.."
-"%PY%" -m jobs.capture --no-headless %*
+"%PY%" -m jobs.capture --no-headless --no-submit %*
 set "RC=%errorlevel%"
 echo.
 echo (exit code: %RC%)
