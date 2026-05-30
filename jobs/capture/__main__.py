@@ -54,6 +54,8 @@ KEYWORDS: Dict[str, str] = {
     "ETL": "ETL",
     "Dashboard": "Daily Service Inspection Dashboard",
 }
+REFRESH_TARGET_ORDER: Tuple[str, ...] = ("Dashboard", "Zenius")
+REFRESH_WAIT_SECONDS = 5.0
 TARGET_PROCESS = "chrome.exe"
 REQUIRE_CLASS_NAME = "Chrome_WidgetWin_1"
 REQUIRE_VISIBLE = True
@@ -113,6 +115,60 @@ def _read_credentials() -> tuple[str, str]:
 # 캡처 stage 보조
 # ---------------------------------------------------------------------------
 
+def _collect_capture_windows() -> list[W.WindowInfo]:
+    """캡처 대상 후보가 되는 Chrome 최상위 창 목록을 수집한다."""
+    return W.collect_chrome_main_windows(
+        target_process=TARGET_PROCESS,
+        require_class_name=REQUIRE_CLASS_NAME,
+        require_visible=REQUIRE_VISIBLE,
+        min_window_width=MIN_WINDOW_WIDTH,
+        min_window_height=MIN_WINDOW_HEIGHT,
+    )
+
+
+def _choose_target_window(
+    target_name: str,
+    left_monitor_rect: Tuple[int, int, int, int],
+) -> W.WindowInfo:
+    """대상 이름에 해당하는 좌측 모니터의 최적 창을 고른다."""
+    chrome_windows = _collect_capture_windows()
+    matched = W.match_targets(
+        {target_name: KEYWORDS[target_name]},
+        chrome_windows,
+    )
+    best = W.choose_best_match_by_overlap(
+        matched[target_name],
+        left_monitor_rect,
+    )
+    if not best:
+        raise RuntimeError(f"새로고침 대상 누락: {target_name}")
+    if best.is_minimized:
+        raise RuntimeError(f"새로고침 대상 최소화됨: {target_name}")
+
+    ratio = W.overlap_ratio(best.rect, left_monitor_rect)
+    if ratio < OVERLAP_OK_THRESHOLD:
+        raise RuntimeError(
+            f"새로고침 대상 겹침 부족: {target_name}={ratio*100:.1f}% rect={best.rect}"
+        )
+    return best
+
+
+def _refresh_targets_before_capture(
+    left_monitor_rect: Tuple[int, int, int, int],
+) -> None:
+    """Daily Service -> Zenius 순서로 캡처 대상 창을 새로고침한다."""
+    for target_name in REFRESH_TARGET_ORDER:
+        window = _choose_target_window(target_name, left_monitor_rect)
+        LOG.info(
+            "캡처 전 새로고침: target=%s hwnd=0x%08X title=%r",
+            target_name,
+            window.hwnd,
+            window.title,
+        )
+        W.refresh_window(window.hwnd)
+        time.sleep(REFRESH_WAIT_SECONDS)
+
+
 def _validate_targets_and_layout(
     left_monitor_rect: Tuple[int, int, int, int],
 ) -> None:
@@ -121,13 +177,7 @@ def _validate_targets_and_layout(
     Raises:
         RuntimeError: 대상 누락, 최소화됨, 겹침 부족, 가려짐 중 하나라도 발생.
     """
-    chrome_windows = W.collect_chrome_main_windows(
-        target_process=TARGET_PROCESS,
-        require_class_name=REQUIRE_CLASS_NAME,
-        require_visible=REQUIRE_VISIBLE,
-        min_window_width=MIN_WINDOW_WIDTH,
-        min_window_height=MIN_WINDOW_HEIGHT,
-    )
+    chrome_windows = _collect_capture_windows()
     matched = W.match_targets(KEYWORDS, chrome_windows)
 
     missing = []
@@ -196,6 +246,7 @@ def _do_capture_stage(no_compare: bool) -> Path:
     left_rect = W.get_leftmost_monitor_rect()
     LOG.info("좌측 모니터 rect: %s", left_rect)
 
+    _refresh_targets_before_capture(left_rect)
     _validate_targets_and_layout(left_rect)
 
     latest_path = CAPTURES_DIR / LATEST_FILENAME

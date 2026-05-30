@@ -12,6 +12,7 @@ import 시점에 로드한다. 그러므로 Windows + pywin32 설치 환경에�
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -290,6 +291,27 @@ def choose_best_match_by_overlap(
     scored = [(overlap_ratio(c.rect, monitor_rect), c) for c in candidates]
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored[0][1]
+
+
+# ---------------------------------------------------------------------------
+# 윈도우 활성화 + 브라우저 새로고침
+# ---------------------------------------------------------------------------
+
+def activate_window(hwnd: int) -> None:
+    """대상 윈도우를 foreground로 올린다."""
+    if win32gui.IsIconic(hwnd):
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+    else:
+        win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+    win32gui.SetForegroundWindow(hwnd)
+    time.sleep(0.2)
+
+
+def refresh_window(hwnd: int) -> None:
+    """대상 윈도우를 활성화한 뒤 F5를 한 번 보낸다."""
+    activate_window(hwnd)
+    win32api.keybd_event(win32con.VK_F5, 0, 0, 0)
+    win32api.keybd_event(win32con.VK_F5, 0, win32con.KEYEVENTF_KEYUP, 0)
 
 
 # ---------------------------------------------------------------------------
