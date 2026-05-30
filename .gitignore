@@ -21,6 +21,7 @@ config/daily.yaml
 logs/
 state/
 captures/
+screenshots/
 *.log
 
 # IDE

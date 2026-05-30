@@ -76,6 +76,11 @@ GOTO_TIMEOUT_MS = 60000
 # 캔버스 visible 대기(원본 30초).
 CANVAS_VISIBLE_TIMEOUT_MS = 30000
 
+# 대시보드 더블클릭 후 팝업 생성/load 대기. 실패 시 빠르게 다음 주기로 넘긴다.
+POPUP_OPEN_ATTEMPTS = 2
+POPUP_WAIT_TIMEOUT_MS = 10000
+POPUP_LOAD_TIMEOUT_MS = 10000
+
 # 사이트 설정 파일(비밀번호 제외).
 SITES_CONFIG_PATH = config.BASE_DIR / "config" / "jennifer_sites.json"
 
@@ -383,22 +388,49 @@ def _open_dashboard_popup(page: Page, login_type: str) -> Page:
             "차트 렌더 실패 의심."
         )
 
-    LOG.info("캔버스 중앙 더블클릭 (%.1f, %.1f)", center_x, center_y)
-    try:
-        with page.expect_popup() as popup_info:
-            canvas.dblclick(position={"x": center_x, "y": center_y})
-            canvas.hover(position={"x": center_x, "y": center_y})
-        popup = popup_info.value
-    except PWTimeoutError as e:
-        # bounding_box 가 정상이었으므로 좌표는 가능. 그래도 팝업이 안 뜬 상황 →
-        # 차트 렌더 후 더블클릭 이벤트가 캔버스에 전달되지 않았거나, 사이트가
-        # 팝업을 만들지 않은 경우. 두 가지를 구분 가능하게 메시지에 남긴다.
+    last_timeout: Optional[PWTimeoutError] = None
+    for attempt in range(1, POPUP_OPEN_ATTEMPTS + 1):
+        LOG.info(
+            "캔버스 중앙 더블클릭 시도 %d/%d (%.1f, %.1f)",
+            attempt,
+            POPUP_OPEN_ATTEMPTS,
+            center_x,
+            center_y,
+        )
+        try:
+            with page.expect_popup(timeout=POPUP_WAIT_TIMEOUT_MS) as popup_info:
+                canvas.dblclick(position={"x": center_x, "y": center_y})
+                canvas.hover(position={"x": center_x, "y": center_y})
+            popup = popup_info.value
+            LOG.info("팝업 이벤트 감지: url=%s", popup.url)
+            try:
+                popup.wait_for_load_state(
+                    "domcontentloaded",
+                    timeout=POPUP_LOAD_TIMEOUT_MS,
+                )
+            except PWTimeoutError as e:
+                raise RuntimeError(
+                    "팝업은 열렸으나 domcontentloaded 대기 타임아웃"
+                    f"(timeout={POPUP_LOAD_TIMEOUT_MS}ms, url={popup.url})"
+                ) from e
+            break
+        except PWTimeoutError as e:
+            last_timeout = e
+            LOG.warning(
+                "팝업 생성 대기 타임아웃 attempt=%d/%d timeout=%dms box=%s",
+                attempt,
+                POPUP_OPEN_ATTEMPTS,
+                POPUP_WAIT_TIMEOUT_MS,
+                box,
+            )
+            if attempt < POPUP_OPEN_ATTEMPTS:
+                page.wait_for_timeout(1000)
+    else:
         raise RuntimeError(
-            "더블클릭은 수행했으나 팝업 미발생(좌표/렌더/이벤트바인딩 의심). "
-            f"box={box}"
-        ) from e
+            "더블클릭은 수행했으나 팝업 미발생/로드 지연"
+            f"(timeout={POPUP_WAIT_TIMEOUT_MS}ms, attempts={POPUP_OPEN_ATTEMPTS}, box={box})"
+        ) from last_timeout
 
-    popup.wait_for_load_state("load")
     LOG.info("팝업 오픈 + 제어권 획득")
     return popup
 
