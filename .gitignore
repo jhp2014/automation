@@ -30,3 +30,7 @@ state/
 # OS
 Thumbs.db
 .DS_Store
+
+# Runtime input images for server upload job (keep .gitkeep for folder structure)
+/jobs/server/images/*
+!/jobs/server/images/.gitkeep

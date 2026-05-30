@@ -2,10 +2,12 @@
 
 원본 server/orchestrator.py + worker_upload.py를 한 job으로 통합했다.
 주요 차이점:
-    - orchestrator → worker subprocess 구조를 단일 프로세스 내 폴더-루프로 대체.
+    - orchestrator → worker subprocess 구조는 단일 job 안으로 통합했다.
     - 비즈니스 로직은 common.kworks.KworksClient에 위임.
-    - 폴더가 여러 개면 폴더 사이에서 폼을 다시 열어(open_task_detail) 폴더별
-      상태가 섞이지 않게 한다(원본이 폴더당 worker를 새로 띄우던 효과와 동등).
+    - KWorks UI 상태 격리를 위해 폴더마다 새 browser/context/page를 생성한다.
+      이는 원본이 폴더당 worker를 새로 띄우던 효과를 보존하기 위함이다.
+      특히 --no-submit 디버그 모드에서 미등록 댓글/첨부 폼 상태가 다음 폴더에
+      영향을 주지 않게 한다.
 
 비밀값(로그인 id/pw)은 .env에서 읽는다(KWORKS_USER_ID/KWORKS_USER_PW).
 target_title은 매일 바뀌므로 CLI 인자(--target-title)로 받는다.
@@ -264,39 +266,41 @@ def main() -> int:
         LOG.info("[STAGE] %s", stage)
         user_id, user_pw = _read_credentials()
 
-        with sync_browser(
-            headless=headless,
-        ) as (_browser, _context, page):
+        for idx, (folder, images) in enumerate(plan, start=1):
+            LOG.info(
+                "[FOLDER] %d/%d %s (이미지 %d장)",
+                idx,
+                len(plan),
+                folder,
+                len(images),
+            )
 
-            stage = "kworks_login"
+            stage = f"folder[{idx}].browser"
             LOG.info("[STAGE] %s", stage)
-            client = KworksClient(page, logger=LOG)
-            client.login(KWORKS_URL, user_id, user_pw)
-            LOG.info("[OK] KWorks 로그인 완료")
+            with sync_browser(
+                headless=headless,
+            ) as (_browser, _context, page):
 
-            for idx, (folder, images) in enumerate(plan, start=1):
-                LOG.info(
-                    "[FOLDER] %d/%d %s (이미지 %d장)",
-                    idx,
-                    len(plan),
-                    folder,
-                    len(images),
-                )
+                client = KworksClient(page, logger=LOG)
 
-                stage = f"open_task_detail[{idx}]"
+                stage = f"folder[{idx}].kworks_login"
+                LOG.info("[STAGE] %s", stage)
+                client.login(KWORKS_URL, user_id, user_pw)
+
+                stage = f"folder[{idx}].open_task_detail"
                 LOG.info("[STAGE] %s", stage)
                 form = client.open_task_detail(target_title)
 
-                stage = f"type_comment[{idx}]"
+                stage = f"folder[{idx}].type_comment"
                 LOG.info("[STAGE] %s", stage)
                 client.type_comment(form, folder.name)
 
-                stage = f"upload_files[{idx}]"
+                stage = f"folder[{idx}].upload_files"
                 LOG.info("[STAGE] %s", stage)
                 client.upload_files(form, images)
 
                 if submit:
-                    stage = f"submit[{idx}]"
+                    stage = f"folder[{idx}].submit"
                     LOG.info("[STAGE] %s", stage)
                     client.submit(form)
                 else:
