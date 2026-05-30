@@ -21,13 +21,14 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from common import config as common_config
+from common.daily import DAILY_YAML_PATH, load_daily
 from common.logging import get_logger
 
-from .config import RunnerConfig, SUPABASE_KEY, SUPABASE_URL, load_runner_config
+from .config import JobConfig, RunnerConfig, SUPABASE_KEY, SUPABASE_URL, load_runner_config
 from .executor import kill_all_running, run_job
 from .heartbeat import HeartbeatSender
 from .scheduler import (
@@ -54,6 +55,98 @@ def _compute_stop_time(run_until: Optional[str]) -> Optional[datetime]:
     if not run_until:
         return None
     return datetime.strptime(run_until, "%Y-%m-%d %H:%M")
+
+
+def _mask_present(value: str) -> str:
+    """비밀/준비밀 설정값은 내용 대신 설정 여부만 로그에 남긴다."""
+    return "설정됨" if value.strip() else "비어있음"
+
+
+def _find_job(cfg: RunnerConfig, name: str) -> Optional[JobConfig]:
+    """RunnerConfig 에서 이름으로 job 하나를 찾는다."""
+    for job in cfg.jobs:
+        if job.name == name:
+            return job
+    return None
+
+
+def _log_daily_summary(cfg: RunnerConfig, stop_time: Optional[datetime]) -> None:
+    """daily.yaml 에서 온 운영값과 최종 적용된 server 스케줄을 시작 시 로그로 남긴다."""
+    daily = load_daily()
+    if daily is None:
+        LOG.info("[DAILY] daily.yaml 없음 또는 로드 실패: %s", DAILY_YAML_PATH)
+    else:
+        LOG.info(
+            "[DAILY] daily.yaml 로드됨: path=%s run_until=%s target_title=%r "
+            "kworks.user_id=%s kworks.user_pw=%s server_times=%d",
+            DAILY_YAML_PATH,
+            daily.run_until or "(비어있음)",
+            daily.kworks.target_title or "",
+            _mask_present(daily.kworks.user_id),
+            _mask_present(daily.kworks.user_pw),
+            len(daily.server_times),
+        )
+        for idx, entry in enumerate(daily.server_times, start=1):
+            LOG.info(
+                "[DAILY] server_times[%d]: at=%s args=%s",
+                idx,
+                entry.at,
+                entry.args,
+            )
+
+    server_job = _find_job(cfg, "server")
+    if server_job is None or server_job.mode != "one_time_list":
+        LOG.info("[DAILY] server job 이 없거나 one_time_list 모드가 아님")
+        return
+    if not server_job.times or server_job.grace_sec is None:
+        LOG.info("[DAILY] server job times 가 비어 있음")
+        return
+
+    now = datetime.now()
+    LOG.info(
+        "[DAILY] 최종 적용 server 스케줄: grace=%ds entries=%d",
+        server_job.grace_sec,
+        len(server_job.times),
+    )
+    for idx, entry in enumerate(server_job.times, start=1):
+        target = datetime.strptime(entry.at, "%Y-%m-%d %H:%M")
+        expire_at = target + timedelta(seconds=server_job.grace_sec)
+        LOG.info(
+            "[DAILY] 적용 server[%d]: at=%s grace_until=%s args=%s",
+            idx,
+            entry.at,
+            expire_at.strftime("%Y-%m-%d %H:%M:%S"),
+            entry.args,
+        )
+
+        if now > expire_at:
+            LOG.warning(
+                "[주의] server[%d] 실행 시각과 grace 가 이미 지났습니다: "
+                "at=%s grace=%ds now=%s -> 이 항목은 실행되지 않습니다. "
+                "의도한 과거 시각인지 확인하세요.",
+                idx,
+                entry.at,
+                server_job.grace_sec,
+                now.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+        elif now >= target:
+            LOG.warning(
+                "[주의] server[%d] 실행 시각이 이미 지났지만 아직 grace 안입니다: "
+                "at=%s grace_until=%s now=%s -> 곧 실행될 수 있습니다.",
+                idx,
+                entry.at,
+                expire_at.strftime("%Y-%m-%d %H:%M:%S"),
+                now.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+
+        if stop_time and target > stop_time:
+            LOG.warning(
+                "[주의] server[%d] 실행 시각이 runner 종료 예정 시각보다 늦습니다: "
+                "at=%s run_until=%s -> 실행되지 않을 수 있습니다.",
+                idx,
+                entry.at,
+                stop_time.strftime("%Y-%m-%d %H:%M"),
+            )
 
 
 def _try_send_heartbeat(
@@ -116,6 +209,7 @@ def main() -> int:
     stop_time = _compute_stop_time(cfg.run_until)
     if stop_time:
         LOG.info("[RUNLIMIT] 종료 예정: %s", stop_time)
+    _log_daily_summary(cfg, stop_time)
 
     # 시작 직후 1회 heartbeat 시도.
     _try_send_heartbeat(hb, runner_state)
