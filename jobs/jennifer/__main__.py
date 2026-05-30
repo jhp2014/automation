@@ -168,14 +168,27 @@ def _session_path(site_name: str) -> Path:
 # 로그인 / 세션
 # ---------------------------------------------------------------------------
 
-def _do_login(page: Page, login_type: str, site_id: str, site_pw: str) -> None:
+def _do_login(
+    context: BrowserContext,
+    page: Page,
+    login_type: str,
+    site_id: str,
+    site_pw: str,
+    dashboard_url: str,
+) -> Page:
     """login_type 에 맞춰 로그인 폼을 채워 제출한다.
 
     Args:
+        context: 현재 BrowserContext.
         page: 로그인 페이지가 떠 있는 Page.
         login_type: ``"standard"`` 또는 ``"new"``.
         site_id: 로그인 id.
         site_pw: 로그인 pw.
+        dashboard_url: 로그인 성공 후 진입해야 할 HTTPS 대시보드 URL.
+
+    Returns:
+        대시보드 진입이 끝난 Page. 로그인 후 HTTP 리다이렉트가 깨진 경우 새 Page를
+        만들어 반환할 수 있다.
 
     Raises:
         ValueError: 알 수 없는 login_type.
@@ -189,7 +202,28 @@ def _do_login(page: Page, login_type: str, site_id: str, site_pw: str) -> None:
     page.fill(J.SEL_INPUT_ID, site_id)
     page.fill(J.SEL_INPUT_PW, site_pw)
     page.click(btn)
-    page.wait_for_selector(wait_sel, timeout=LOGIN_WAIT_TIMEOUT_MS)
+    try:
+        page.wait_for_selector(wait_sel, timeout=LOGIN_WAIT_TIMEOUT_MS)
+        return page
+    except PWTimeoutError:
+        if login_type != "new":
+            raise
+
+        LOG.warning(
+            "로그인 후 대시보드 대기 실패 -> 새 페이지로 HTTPS 대시보드 직접 진입: "
+            "current_url=%s dashboard_url=%s",
+            page.url,
+            dashboard_url,
+        )
+        old_page = page
+        page = context.new_page()
+        page.goto(dashboard_url, timeout=GOTO_TIMEOUT_MS)
+        try:
+            old_page.close()
+        except Exception as close_err:
+            LOG.warning("로그인 후 실패한 페이지 close 무시: err=%r", close_err)
+        page.wait_for_selector(wait_sel, timeout=LOGIN_WAIT_TIMEOUT_MS)
+        return page
 
 
 def _ensure_login(
@@ -257,7 +291,7 @@ def _ensure_login(
             page.goto(login_url, timeout=GOTO_TIMEOUT_MS)
 
     pw = _read_password(name)
-    _do_login(page, login_type, site["id"], pw)
+    page = _do_login(context, page, login_type, site["id"], pw, url)
 
     save_storage_state(context, _session_path(name))
     LOG.info("[%s] 세션 저장: %s", name, _session_path(name))
