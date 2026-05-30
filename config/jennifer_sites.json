@@ -19,8 +19,9 @@
   },
   {
     "name": "Jennifer_redpen",
-    "url": "http://apm.redpenai.co.kr:7900",
+    "url": "https://apm.redpenai.com/dashboard/realtimeAdmin",
     "id": "admin",
-    "login_type": "new"
+    "login_type": "new",
+    "ignore_https_errors": true
   }
 ]

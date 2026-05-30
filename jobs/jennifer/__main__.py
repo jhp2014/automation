@@ -90,10 +90,13 @@ def _load_sites() -> List[Dict[str, str]]:
 
     Returns:
         각 항목은 ``{name, url, id, login_type}`` 키를 가진 dict 리스트.
+        선택 키 ``ignore_https_errors`` (bool) 가 있으면 해당 사이트는 HTTPS
+        인증서 오류를 무시하고 접속한다(기본 False).
 
     Raises:
         FileNotFoundError: 설정 파일이 없는 경우.
-        ValueError: 파일이 JSON 배열이 아니거나 필수 키가 빠진 경우.
+        ValueError: 파일이 JSON 배열이 아니거나 필수 키가 빠진 경우, 또는
+            ``ignore_https_errors`` 가 bool 이 아닌 경우.
     """
     if not SITES_CONFIG_PATH.exists():
         raise FileNotFoundError(f"사이트 설정 없음: {SITES_CONFIG_PATH}")
@@ -115,6 +118,13 @@ def _load_sites() -> List[Dict[str, str]]:
             raise ValueError(
                 f"사이트[{i}] login_type 은 'standard' 또는 'new' 만 허용: "
                 f"{site['login_type']}"
+            )
+        if "ignore_https_errors" in site and not isinstance(
+            site["ignore_https_errors"], bool
+        ):
+            raise ValueError(
+                f"사이트[{i}] ignore_https_errors 는 true/false 만 허용: "
+                f"{site['ignore_https_errors']}"
             )
     return data
 
@@ -386,6 +396,8 @@ def _check_one_site(
     """
     name = site["name"]
     login_type = site["login_type"]
+    # 사이트별 선택 키. 사내/HTTPS 인증서 오류가 있는 사이트만 True (예: Redpen).
+    ignore_https_errors = bool(site.get("ignore_https_errors", False))
 
     stage_holder[0] = f"[{name}] launch_browser"
     LOG.info("[STAGE] %s", stage_holder[0])
@@ -396,13 +408,8 @@ def _check_one_site(
     with sync_browser(
         headless=headless,
         storage_state=storage_state_arg,
+        ignore_https_errors=ignore_https_errors,
     ) as (_browser, context, page):
-
-        # ignore_https_errors 는 사이트 자체가 일부 https 인증 문제를 가질 수
-        # 있어서 원본에서 True 였다. common.browser.sync_browser 에는 옵션이
-        # 없으므로 컨텍스트에 직접 적용한다.
-        # (Playwright sync API 에는 컨텍스트 단위 옵션을 추가할 직접 메서드는
-        # 없지만, 현재 사이트 4개가 모두 http 라 굳이 처리하지 않아도 통과.)
 
         stage_holder[0] = f"[{name}] ensure_login"
         LOG.info("[STAGE] %s", stage_holder[0])

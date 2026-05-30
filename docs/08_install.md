@@ -124,6 +124,8 @@ notepad config\daily.yaml
 
 `config/jennifer_sites.json` 은 git 추적. 사이트 추가/수정 시 본 파일을 편집하고 비밀번호는 `.env` 의 `JENNIFER_PW__<NAME_UPPER>` 키에 추가.
 
+각 항목 키: 필수 `{name, url, id, login_type}`, 선택 `ignore_https_errors`(bool, 기본 false). HTTPS 인증서 오류가 나는 사이트(예: Redpen)는 `"ignore_https_errors": true` 를 추가하면 인증서 검증을 건너뛰고 접속한다.
+
 ## 7) 첫 동작 검증
 
 세 단계로 확장하며 점검한다. 각 단계가 끝까지 성공해야 다음으로 넘어간다.

@@ -61,6 +61,7 @@ def sync_browser(
     storage_state: Union[str, Path, None] = None,
     viewport: Optional[Dict[str, int]] = None,
     window_size: Optional[Tuple[int, int]] = None,
+    ignore_https_errors: bool = False,
 ) -> Iterator[Tuple[Browser, BrowserContext, Page]]:
     """크로미움 브라우저/컨텍스트/페이지를 생성하고 종료 시 정리한다.
 
@@ -80,6 +81,9 @@ def sync_browser(
         viewport: ``{"width": int, "height": int}`` 형태의 명시 뷰포트.
         window_size: ``(width, height)`` 튜플. 브라우저 창 크기와 (viewport가
             없을 때) 뷰포트 크기를 함께 결정한다.
+        ignore_https_errors: True이면 HTTPS 인증서 오류를 무시하고 컨텍스트를
+            생성한다. 사내 인증서/SSL inspection/자체서명 인증서 환경에서 HTTPS
+            접속 실패를 우회할 때 사용한다.
 
     Yields:
         ``(Browser, BrowserContext, Page)`` 튜플. with 블록을 빠져나가면
@@ -126,6 +130,8 @@ def sync_browser(
         if effective_viewport is not None:
             context_kwargs["viewport"] = effective_viewport
             context_kwargs["device_scale_factor"] = 1
+        if ignore_https_errors:
+            context_kwargs["ignore_https_errors"] = True
 
         context = browser.new_context(**context_kwargs)
         page = context.new_page()

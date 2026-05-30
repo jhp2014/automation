@@ -174,7 +174,7 @@ send_heartbeat(target_heartbeat, source="zenius")
 
 ## common.browser
 
-### `sync_browser(*, headless=True, storage_state=None, viewport=None, window_size=None)`
+### `sync_browser(*, headless=True, storage_state=None, viewport=None, window_size=None, ignore_https_errors=False)`
 크로미움 브라우저/컨텍스트/페이지를 생성하고 with 종료 시 정리하는 컨텍스트 매니저.
 
 **Yields**: `tuple[Browser, BrowserContext, Page]`.
@@ -182,6 +182,7 @@ send_heartbeat(target_heartbeat, source="zenius")
 - `window_size=(W, H)` 가 주어지면 launch args 에 `--window-size=W,H` 가 들어가고 viewport 도 동일 크기로.
 - `viewport` 와 `window_size` 가 동시에 있으면 `viewport` 가 우선.
 - `storage_state` 파일이 존재하지 않거나 JSON 파싱 실패면 세션 없이 새 컨텍스트로 폴백 + 경고 로그.
+- `ignore_https_errors=True` 면 `new_context()` 에 같은 옵션을 넘겨 HTTPS 인증서 오류를 무시한다(사내 인증서/SSL inspection/자체서명 환경). 기본 `False` — 기존 호출부는 영향 없음.
 - teardown 의 close 예외는 swallow. launch 실패는 호출부로 전파.
 
 ```python
