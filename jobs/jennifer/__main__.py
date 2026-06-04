@@ -53,7 +53,7 @@ from site_selectors import jennifer as J
 # 를 false 로 바꾼다(코드 흐름은 동일).
 
 # fatal 임계값(원본 그대로). 초과 시 즉시 Fail-Fast.
-FATAL_THRESHOLD = 50
+FATAL_THRESHOLD = 100
 
 # 차트 데이터 렌더 대기(원본 5초).
 CHART_RENDER_WAIT_MS = 5000

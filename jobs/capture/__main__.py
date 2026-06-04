@@ -69,7 +69,7 @@ SAMPLE_MARGIN_PX = 30
 OCCLUSION_OK_RATIO = 1.0
 
 # --- dHash 비교 임계값 ---
-DHASH_THRESHOLD = 7
+DHASH_THRESHOLD = 9
 
 # --- 안전 검사 ---
 MAX_AGE_SECONDS = 300
