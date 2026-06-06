@@ -52,7 +52,7 @@ from site_selectors import zenius as Z
 # 정책 / 설정 (비밀 아님)
 # ---------------------------------------------------------------------------
 
-# 위험 등급(원본 그대로): 치명/긴급/위험 + 미처리만 후보.
+# 감시 대상 등급(원본 그대로): 치명/긴급/위험/주의/무해 + 미처리만 후보.
 CRITICAL_TITLES = {"치명", "긴급", "위험", "주의", "무해"}
 IGNORE_STATUSES = {"종료", "응답", "인지"}
 # 지속 9분 이상이면 보고 대상.
@@ -242,7 +242,7 @@ def _cell_text(row, selector: str) -> str:
 
 
 def scan_critical_rows(page: Page) -> list[dict]:
-    """EMS 그리드를 훑어 위험 등급 + 미처리 행만 추출한다.
+    """EMS 그리드를 훑어 감시 대상 등급 + 미처리 행만 추출한다.
 
     Returns:
         각 항목은 ``{id, status, severity, duration, duration_sec, title, msg,
@@ -525,7 +525,7 @@ def main() -> int:
             stage = "scan_rows"
             LOG.info("[STAGE] %s", stage)
             crit = scan_critical_rows(page)
-            LOG.info("위험 이벤트(치명/긴급/위험)+미처리 건수: %d", len(crit))
+            LOG.info("감시 대상 이벤트(치명/긴급/위험/주의/무해)+미처리 건수: %d", len(crit))
 
             stage = "filter_candidates"
             candidates = [
@@ -540,8 +540,8 @@ def main() -> int:
 
             # 한 실행당 Pushover 긴급은 1회만(원본 정책).
             send_pushover_emergency(
-                title=f"[Zenius] 위험 지속(10분+) {len(candidates)}건",
-                message="위험 이벤트 감지. 상세 보고/캡처는 Telegram(Report) 확인.",
+                title=f"[Zenius] 감시 대상 지속(10분+) {len(candidates)}건",
+                message="감시 대상 이벤트 감지. 상세 보고/캡처는 Telegram(Report) 확인.",
             )
 
             stage = "capture_ems"

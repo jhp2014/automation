@@ -26,7 +26,7 @@ job 한 회 실행이 수행할 단계를 **stage 단위로** 기술한다. KWor
 > 예: `init` → `credentials` → `kworks_login` → `open_task_detail` → `type_comment(폴더명)` → `upload_files(자연정렬 이미지들)` → `submit`.
 
 원본 스크립트가 있으면 "원본 보존" 으로 따로 묶어 다음을 명시:
-- 보존할 정책/임계값 (예: `THRESHOLD_SEC = 10*60`, `CRITICAL_TITLES = {"치명","긴급","위험"}`)
+- 보존할 정책/임계값 (예: `THRESHOLD_SEC = 10*60`, `CRITICAL_TITLES = {"치명","긴급","위험","주의","무해"}`)
 - 보존할 셀렉터 출처 (예: 원본의 `aria-describedby` 기반 td 셀렉터를 그대로 옮긴다)
 - 보존할 동작 (예: 정렬 ASC 보정, 배너 닫기 best-effort)
 
