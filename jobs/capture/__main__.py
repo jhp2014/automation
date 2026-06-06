@@ -165,7 +165,12 @@ def _refresh_targets_before_capture(
             window.hwnd,
             window.title,
         )
-        W.refresh_window(window.hwnd)
+        if not W.refresh_window(window.hwnd):
+            LOG.warning(
+                "새로고침 포커스 실패(스킵): target=%s hwnd=0x%08X",
+                target_name,
+                window.hwnd,
+            )
         time.sleep(REFRESH_WAIT_SECONDS)
 
 

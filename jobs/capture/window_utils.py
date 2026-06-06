@@ -297,21 +297,113 @@ def choose_best_match_by_overlap(
 # 윈도우 활성화 + 브라우저 새로고침
 # ---------------------------------------------------------------------------
 
-def activate_window(hwnd: int) -> None:
-    """대상 윈도우를 foreground로 올린다."""
+def _force_foreground(hwnd: int) -> bool:
+    """SetForegroundWindow를 여러 우회 기법으로 시도한다.
+
+    Windows는 포커스 도용 방지(foreground lock) 때문에 백그라운드 프로세스가
+    SetForegroundWindow를 호출하면 반환값 0(실패)으로 막는다. pywin32는 이를
+    ``error(0, 'SetForegroundWindow', ...)``로 던진다. 아래 기법을 순서대로
+    시도하고, 실제로 foreground가 됐는지 GetForegroundWindow로 검증한다.
+
+    성공하면 True, 끝까지 실패하면 False를 반환한다(예외를 던지지 않는다).
+    """
+    # 1) 포커스 잠금 타임아웃을 0으로 (호출 프로세스 권한 내에서)
+    try:
+        win32gui.SystemParametersInfo(
+            win32con.SPI_SETFOREGROUNDLOCKTIMEOUT, 0, win32con.SPIF_SENDCHANGE
+        )
+    except Exception:
+        pass
+
+    # 2) Alt 키를 한 번 까딱여 포커스 잠금을 해제 (잘 알려진 트릭)
+    try:
+        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+        win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+    except Exception:
+        pass
+
+    # 3) AttachThreadInput으로 현재 foreground 스레드에 붙어 제약을 우회
+    fg = win32gui.GetForegroundWindow()
+    cur_thread = win32api.GetCurrentThreadId()
+    fg_thread = 0
+    target_thread = 0
+    attached_fg = False
+    attached_target = False
+    try:
+        if fg:
+            fg_thread, _ = win32process.GetWindowThreadProcessId(fg)
+        target_thread, _ = win32process.GetWindowThreadProcessId(hwnd)
+        if fg_thread and fg_thread != cur_thread:
+            attached_fg = win32process.AttachThreadInput(cur_thread, fg_thread, True)
+        if target_thread and target_thread not in (cur_thread, fg_thread):
+            attached_target = win32process.AttachThreadInput(
+                cur_thread, target_thread, True
+            )
+
+        win32gui.BringWindowToTop(hwnd)
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
+        try:
+            win32gui.SetActiveWindow(hwnd)
+        except Exception:
+            pass
+    finally:
+        if attached_fg:
+            try:
+                win32process.AttachThreadInput(cur_thread, fg_thread, False)
+            except Exception:
+                pass
+        if attached_target:
+            try:
+                win32process.AttachThreadInput(cur_thread, target_thread, False)
+            except Exception:
+                pass
+
+    return win32gui.GetForegroundWindow() == hwnd
+
+
+def activate_window(hwnd: int, attempts: int = 3) -> bool:
+    """대상 윈도우를 foreground로 올린다.
+
+    실패해도 예외를 던지지 않고 False를 반환한다(전체 캡처 잡이 죽지 않도록).
+    재시도/우회에도 못 올리면 마지막에 minimize→restore 토글까지 시도한다.
+    """
     if win32gui.IsIconic(hwnd):
         win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
     else:
         win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
-    win32gui.SetForegroundWindow(hwnd)
+
+    for i in range(attempts):
+        if _force_foreground(hwnd):
+            time.sleep(0.2)
+            return True
+        # 마지막 직전 시도에서 minimize→restore 토글로 강제 환기
+        if i == attempts - 2:
+            try:
+                win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+                time.sleep(0.1)
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            except Exception:
+                pass
+        time.sleep(0.3)
+
     time.sleep(0.2)
+    return win32gui.GetForegroundWindow() == hwnd
 
 
-def refresh_window(hwnd: int) -> None:
-    """대상 윈도우를 활성화한 뒤 F5를 한 번 보낸다."""
-    activate_window(hwnd)
+def refresh_window(hwnd: int) -> bool:
+    """대상 윈도우를 활성화한 뒤 F5를 한 번 보낸다.
+
+    포커스 확보에 실패하면(다른 창이 foreground) 엉뚱한 창에 F5가 가지 않도록
+    키 입력을 건너뛰고 False를 반환한다. 성공하면 True.
+    """
+    if not activate_window(hwnd):
+        return False
     win32api.keybd_event(win32con.VK_F5, 0, 0, 0)
     win32api.keybd_event(win32con.VK_F5, 0, win32con.KEYEVENTF_KEYUP, 0)
+    return True
 
 
 # ---------------------------------------------------------------------------
