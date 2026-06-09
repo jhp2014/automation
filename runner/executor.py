@@ -18,6 +18,7 @@ from typing import IO, Any, Dict, List, Optional
 
 from common import config as common_config
 from common.logging import get_logger
+from common.notify import send_pushover_emergency
 
 from .config import JobConfig, OneTimeEntry
 
@@ -191,6 +192,25 @@ def run_job(
                 _log.warning(
                     "[%s] 비정상 종료(exit=%d)인데 stderr 출력이 없습니다.", name, rc
                 )
+
+        # 러너 차원의 안전망 알림.
+        #   - rc == 0 : 정상 → 무시.
+        #   - rc == 1 : job 이 Fail-Fast 규약에 따라 자체 except 에서 이미 Pushover
+        #     를 보냈다 → 중복 발송 방지를 위해 러너는 침묵.
+        #   - timed_out(watchdog kill) 또는 rc 가 0/1 이 아닌 하드 크래시(OOM 으로
+        #     인한 강제 종료 등) : job 이 스스로 보고하지 못한 죽음이므로 여기서
+        #     알린다. asyncio 파이프 단의 MemoryError 처럼 job 의 except 를 우회해
+        #     무음 hang 으로 빠지던 구간이 정확히 여기로 잡힌다.
+        if timed_out or rc not in (0, 1):
+            reason = "watchdog timeout(hang 의심)" if timed_out else f"비정상 종료(exit={rc})"
+            tail = "\n".join(stderr_tail[-20:]).strip()
+            send_pushover_emergency(
+                title="Runner: job 비정상 종료",
+                message=(
+                    f"job={name} | {reason} | elapsed={elapsed:.0f}s\n"
+                    + (tail[-800:] if tail else "(stderr 출력 없음)")
+                ),
+            )
 
         return rc
 
