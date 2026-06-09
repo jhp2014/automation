@@ -25,18 +25,23 @@ heartbeat_source: main_runner
 
 jobs:
   # --- Zenius EMS 모니터 (180초 주기) ---
+  # 평소 1회 run 은 ~1분 안쪽. 감시 대상 폭주 시 이벤트별 텔레그램 사진 업로드
+  # (건당 25s)를 흡수하도록 120s 로 둔다. hang(무응답) 은 이 안에서 잡혀 러너
+  # 안전망 알림으로 빠진다.
   - name: zenius
     module: jobs.zenius
     mode: interval
     interval_sec: 180
-    timeout_sec: 600
+    timeout_sec: 120
 
   # --- DailyService(SDS) 대시보드 모니터 (600초 주기) ---
+  # 로그인 + 비정상 카운트 체크뿐이라 정상 run 은 짧다. 60s 면 충분하고, 초과
+  # 시 hang 으로 보고 러너 안전망이 알린다.
   - name: daily_service
     module: jobs.daily_service
     mode: interval
     interval_sec: 600
-    timeout_sec: 600
+    timeout_sec: 60
 
   # --- Jennifer 통합 점검 (600초 주기, Fail-Fast) ---
   # 정상 1회 run 은 4개 사이트 합쳐 ~40s. timeout 은 hang(예: WS 폭주로 Playwright
@@ -54,7 +59,8 @@ jobs:
     mode: hourly_jitter
     jitter_max_sec: 600
     grace_sec: 60
-    timeout_sec: 900
+    # 캡처 + KWorks 업로드 1건. 정상 2분 이내. 초과 시 hang 으로 보고 알림.
+    timeout_sec: 120
 
   # --- Server upload (one_time_list) ---
   # times 는 daily.yaml 의 server_times 가 있으면 그 값으로 통째로 치환된다.
@@ -64,7 +70,8 @@ jobs:
     module: jobs.server
     mode: one_time_list
     grace_sec: 300
-    timeout_sec: 3600
+    # 다폴더 업로드지만 3분이면 충분(폴더 수가 크게 늘면 재검토).
+    timeout_sec: 180
     times:
       - at: "2000-01-01 00:00"
         args: []
