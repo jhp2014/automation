@@ -68,6 +68,27 @@ METRIC_VISIBLE_TIMEOUT_MS = 10000
 # 새로고침 버튼 visible 대기.
 REFRESH_VISIBLE_TIMEOUT_MS = 10000
 
+# 팝업 지표 텍스트 읽기 정책. 실시간 대시보드는 새로고침 직후 div.fatal/.total
+# 노드를 다시 그리므로, visible 통과 후에도 inner_text 가 노드 교체 race 로 기본
+# 30초까지 매달릴 수 있다(LMS 타임아웃 사례). text_content(레이아웃 비의존) +
+# 짧은 타임아웃 + 재시도로 재렌더에 강하게 읽는다.
+METRIC_READ_TIMEOUT_MS = 5000
+METRIC_READ_ATTEMPTS = 3
+METRIC_READ_RETRY_WAIT_MS = 500
+
+# activeService 팝업의 WebSocket 차단 여부.
+#   배경: 트랜잭션 밀림으로 데이터가 폭증하면 팝업의 실시간 WS 가 대량 프레임을
+#   쏟아내고, Playwright 가 그 프레임을 전부 Node->파이프->Python 으로 복사하다가
+#   MemoryError 로 죽는다(asyncio 파이프 버퍼 extend 또는 base64 디코딩 단계).
+#   대책: 팝업의 WS 를 mock 으로 가로채 서버에 연결하지 않으면 프레임 유입 자체가
+#   사라져 OOM 을 근본 차단한다.
+#   ⚠ 단, fatal/total 카운트가 이 WS 로 채워진다면 차단 시 값이 안 들어올 수 있다.
+#   카운트가 새로고침(HTTP)으로 채워지면 안전. 운영 머신에서 True 로 켠 채 한 번
+#   돌려 카운트가 실제 대시보드와 일치하는지 검증한 뒤 기본값으로 둘 것(검증 전
+#   기본 False). 값이 안 들어와도 div.fatal visible 대기에서 타임아웃 -> 러너
+#   안전망 알림으로 잡히므로 "조용한 정상 오인"이 아니라 "실패 알림"으로 빠진다.
+BLOCK_POPUP_WS = False
+
 # 세션 유효성 확인 타임아웃(원본 5초).
 SESSION_CHECK_TIMEOUT_MS = 5000
 
@@ -339,6 +360,60 @@ def _ensure_login(
 # 팝업 오픈
 # ---------------------------------------------------------------------------
 
+def _install_popup_ws_blocker(page: Page) -> None:
+    """팝업이 열리기 전에 컨텍스트 레벨로 WebSocket 차단 라우트를 건다.
+
+    핸들러가 ``connect_to_server`` 를 호출하지 않으면 해당 WebSocket 은 mock 으로만
+    열리고 실제 서버에는 연결되지 않는다 -> 프레임 유입이 없어 OOM 을 근본 차단한다.
+    이미 연결된 WS(메인 대시보드 차트 등)에는 영향이 없고, 이후 새로 열리는 팝업의
+    WS 만 가로챈다. ``BLOCK_POPUP_WS`` 가 True 일 때만 호출한다.
+    """
+    def _block(ws) -> None:
+        # connect_to_server 미호출 = 서버 미연결(드롭).
+        try:
+            LOG.info("[ws] 팝업 WebSocket 차단(mock): url=%s", ws.url)
+        except Exception:
+            LOG.info("[ws] 팝업 WebSocket 차단(mock)")
+
+    page.context.route_web_socket("**/*", _block)
+
+
+def _read_metric_text(page: Page, locator, label: str) -> str:
+    """지표 텍스트를 재렌더 race 에 강하게 읽는다.
+
+    ``text_content`` (레이아웃 비의존) + 짧은 타임아웃으로 시도하고, 빈 값/타임아웃
+    이면 잠깐 쉬었다가 재시도한다. 끝까지 실패하면 ``PWTimeoutError`` 를 올려
+    호출부의 타임아웃 처리(=실패 알림)로 흘려보낸다. 빈 값을 0 으로 오인해
+    "정상"으로 보고하는 사고를 막기 위해, 공백뿐인 값은 성공으로 치지 않는다.
+
+    Args:
+        page: 재시도 사이 대기에 쓸 팝업 Page.
+        locator: fatal/total 지표 Locator(``.first``).
+        label: 로그용 지표 이름.
+
+    Returns:
+        비어 있지 않은 지표 텍스트.
+
+    Raises:
+        PWTimeoutError: 모든 시도에서 타임아웃하거나 빈 값만 반복된 경우.
+    """
+    last_err: Optional[Exception] = None
+    for attempt in range(1, METRIC_READ_ATTEMPTS + 1):
+        try:
+            txt = locator.text_content(timeout=METRIC_READ_TIMEOUT_MS)
+            if txt is not None and txt.strip():
+                return txt
+            last_err = RuntimeError(f"{label} 텍스트가 비어 있음(attempt={attempt})")
+        except PWTimeoutError as e:
+            last_err = e
+        LOG.info("[metrics] %s 읽기 재시도 %d/%d (%r)", label, attempt, METRIC_READ_ATTEMPTS, last_err)
+        page.wait_for_timeout(METRIC_READ_RETRY_WAIT_MS)
+
+    if isinstance(last_err, PWTimeoutError):
+        raise last_err
+    raise PWTimeoutError(f"{label} 텍스트 읽기 실패(빈 값 반복): {last_err}")
+
+
 def _open_dashboard_popup(page: Page, login_type: str) -> Page:
     """대시보드 캔버스 중앙을 더블클릭해 팝업을 가로챈다.
 
@@ -394,6 +469,11 @@ def _open_dashboard_popup(page: Page, login_type: str) -> Page:
             f"캔버스 크기가 0 (width={width}, height={height}). "
             "차트 렌더 실패 의심."
         )
+
+    # 메인 차트는 이미 렌더됐으므로(위 대기), 지금 WS 라우트를 걸면 이후 열리는
+    # 팝업의 실시간 WS 만 차단되고 메인 차트의 기존 WS 는 영향받지 않는다.
+    if BLOCK_POPUP_WS:
+        _install_popup_ws_blocker(page)
 
     last_timeout: Optional[PWTimeoutError] = None
     for attempt in range(1, POPUP_OPEN_ATTEMPTS + 1):
@@ -513,11 +593,11 @@ def _get_metrics_with_refresh(popup_page: Page, login_type: str) -> Dict[str, in
         LOG.info("[metrics] fatal 지표 visible 대기 (timeout=%dms)", METRIC_VISIBLE_TIMEOUT_MS)
         fatal_locator.wait_for(state="visible", timeout=METRIC_VISIBLE_TIMEOUT_MS)
         LOG.info("[metrics] fatal 지표 visible 확인 -> 텍스트 추출")
-        fatal_text = fatal_locator.inner_text()
+        fatal_text = _read_metric_text(popup_page, fatal_locator, "fatal")
         LOG.info("[metrics] total 지표 visible 대기 (timeout=%dms)", METRIC_VISIBLE_TIMEOUT_MS)
         total_locator.wait_for(state="visible", timeout=METRIC_VISIBLE_TIMEOUT_MS)
         LOG.info("[metrics] total 지표 visible 확인 -> 텍스트 추출")
-        total_text = total_locator.inner_text()
+        total_text = _read_metric_text(popup_page, total_locator, "total")
 
         metrics = {
             "fatal": _digits_only(fatal_text),
