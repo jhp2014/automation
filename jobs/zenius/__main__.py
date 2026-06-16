@@ -57,6 +57,9 @@ CRITICAL_TITLES = {"치명", "긴급", "위험", "주의", "무해"}
 IGNORE_STATUSES = {"종료", "응답", "인지"}
 # 지속 9분 이상이면 보고 대상.
 THRESHOLD_SEC = 9 * 60
+# 보고 대상이 이 수 이상이면 폭풍으로 간주: 개별 보고/사진/SMS조회를 생략하고
+# 요약 1건만 보낸 뒤 현재 경고 집합 전부를 보고 완료(reported)로 흡수한다.
+STORM_CAP = 4
 # 보고서 양식의 "전파내용" 끝에 들어가는 접촉 방식.
 CONTACT_METHOD = "유선"
 
@@ -401,6 +404,40 @@ def build_report_message(event: dict, owner: str) -> str:
     )
 
 
+def build_storm_summary(crit: list[dict], candidates: list[dict]) -> str:
+    """폭풍(대량 경고) 시 개별 보고 대신 보낼 요약 1건을 만든다.
+
+    Args:
+        crit: 현재 경고 상태 행 전체.
+        candidates: 보고 대상(임계 초과 + 미보고). duration 내림차순 정렬 가정.
+
+    Returns:
+        등급별 집계 + 지속 상위 호스트를 담은 요약 텍스트.
+    """
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    by_sev: dict[str, int] = {}
+    for r in candidates:
+        by_sev[r["severity"]] = by_sev.get(r["severity"], 0) + 1
+    sev_order = ["치명", "긴급", "위험", "주의", "무해"]
+    sev_line = " / ".join(f"{s} {by_sev[s]}" for s in sev_order if s in by_sev)
+
+    top_lines = "\n".join(
+        f"- {r.get('host', '')} [{r.get('severity', '')}] {r.get('duration', '')} "
+        f"{r.get('title', '')}"
+        for r in candidates[:5]
+    )
+
+    return (
+        f"[Zenius] 감시 대상 폭풍 — 보고 대상 {len(candidates)}건 (현재 경고 {len(crit)}건)\n"
+        f"시각 : {now}\n"
+        f"등급 : {sev_line}\n"
+        f"상위(지속순):\n{top_lines}\n"
+        f"※ 대량 경고로 개별 보고를 생략하고 현재 경고 집합을 보고 완료 처리했습니다. "
+        f"상세는 Zenius에서 확인하세요."
+    )
+
+
 def safe_filename(s: str) -> str:
     """파일명으로 쓸 수 있게 위험 문자를 _ 로 치환한다."""
     s = (s or "").strip()
@@ -470,6 +507,65 @@ def _safe_get_target(purpose: str) -> Optional[TelegramTarget]:
         return None
 
 
+def run_baseline(headless: bool) -> int:
+    """현재 EMS에 떠 있는 경고 전부를 보고 완료(reported)로 흡수한다.
+
+    폭풍(대량 경고) 상황에서 손으로 한 번 실행해 현재 경고 집합을 baseline
+    처리하는 도구. 사진/SMS조회/Pushover/heartbeat/개별보고 없이, duration
+    임계와 무관하게 현재 경고 행 전체의 id를 reported에 합쳐 저장한다.
+
+    Args:
+        headless: 브라우저 헤드리스 여부.
+
+    Returns:
+        종료 코드(0=성공, 1=실패).
+    """
+    config.ensure_dirs()
+    start_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    LOG.info("[START] zenius baseline at %s headless=%s", start_ts, headless)
+
+    reported = load_reported_ids()
+    before = len(reported)
+
+    stage = "init"
+    try:
+        with sync_browser(
+            headless=headless,
+            storage_state=STATE_AUTH if STATE_AUTH.exists() else None,
+            window_size=(BROWSER_WINDOW_WIDTH, BROWSER_WINDOW_HEIGHT),
+        ) as (_browser, context, page):
+
+            stage = "ensure_logged_in"
+            LOG.info("[STAGE] %s", stage)
+            user_id, user_pw = _read_credentials()
+            ensure_logged_in_and_save(context, page, user_id, user_pw)
+            LOG.info("[OK] 로그인/세션 확보 완료")
+
+            stage = "open_ems"
+            LOG.info("[STAGE] %s", stage)
+            click_ems_and_ensure_status_sort(page)
+
+            stage = "scan_rows"
+            LOG.info("[STAGE] %s", stage)
+            crit = scan_critical_rows(page)
+            reported |= {r["id"] for r in crit}
+
+            stage = "save_reported_ids"
+            LOG.info("[STAGE] %s", stage)
+            save_reported_ids(reported)
+            LOG.info(
+                "[OK] baseline 흡수: 현재 경고 %d건, reported %d -> %d (신규 %d)",
+                len(crit), before, len(reported), len(reported) - before,
+            )
+            return 0
+
+    except Exception as e:
+        LOG.exception("[FAIL] baseline stage=%s err=%r", stage, e)
+        return 1
+    finally:
+        LOG.info("[END] zenius baseline finished")
+
+
 def main() -> int:
     """Zenius 모니터 진입점. ``--headless/--no-headless`` 를 받는다."""
     parser = argparse.ArgumentParser(description="Zenius EMS monitor")
@@ -479,6 +575,12 @@ def main() -> int:
         default=None,
         help="브라우저 헤드리스 여부. 미지정 시 settings.yaml 의 zenius.headless 사용.",
     )
+    parser.add_argument(
+        "--baseline",
+        action="store_true",
+        help="현재 EMS 경고 전부를 보고 완료로 흡수하고 종료(폭풍 진정용 수동 도구). "
+             "사진/SMS조회/알림/개별보고 없음.",
+    )
     args = parser.parse_args()
 
     # 우선순위: CLI > settings.yaml(폴백 없음 — 둘 다 없으면 조회에서 raise).
@@ -486,6 +588,9 @@ def main() -> int:
         args.headless if args.headless is not None
         else config.get_headless("zenius")
     )
+
+    if args.baseline:
+        return run_baseline(headless)
 
     config.ensure_dirs()
 
@@ -537,6 +642,36 @@ def main() -> int:
                 return 0
 
             candidates.sort(key=lambda r: r["duration_sec"], reverse=True)
+
+            # 폭풍 모드: 보고 대상이 STORM_CAP 이상이면 개별 보고(사진/SMS조회)를
+            # 생략하고 요약 1건만 보낸 뒤 현재 경고 집합 전부를 reported로 흡수한다.
+            # (SMS 건당 조회가 순차로 쌓여 잡이 hang되는 것을 방지)
+            if len(candidates) >= STORM_CAP:
+                stage = "storm_summary"
+                LOG.info(
+                    "[STAGE] %s (보고 대상 %d건 >= %d -> 폭풍 모드)",
+                    stage, len(candidates), STORM_CAP,
+                )
+
+                send_pushover_emergency(
+                    title=f"[Zenius] 감시 대상 폭풍 {len(candidates)}건",
+                    message="대량 경고 감지. 개별 보고 생략, 요약은 Telegram(Report) 확인.",
+                )
+
+                if target_report is not None:
+                    send_telegram_message(
+                        target_report,
+                        build_storm_summary(crit, candidates),
+                    )
+                else:
+                    LOG.warning("Telegram(report) 타깃 없음 -> 폭풍 요약 콘솔만")
+
+                reported |= {r["id"] for r in crit}
+                stage = "save_reported_ids"
+                LOG.info("[STAGE] %s", stage)
+                save_reported_ids(reported)
+                LOG.info("[OK] 폭풍 흡수: 현재 경고 %d건 보고 완료 처리", len(crit))
+                return 0
 
             # 한 실행당 Pushover 긴급은 1회만(원본 정책).
             send_pushover_emergency(
