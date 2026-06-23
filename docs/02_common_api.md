@@ -50,6 +50,14 @@ hb = get_telegram_target("zenius", "heartbeat")   # TelegramTarget(...)
 전용). 폴백 없음: 파일·job 키·필드 중 하나라도 없으면 예외로 죽는다. CLI 로
 `--submit` / `--no-submit` 을 명시하면 호출부가 본 함수를 부르지 않는다.
 
+### `get_refresh_targets(job_key: str) -> list[str]`
+`config/settings.yaml` 에서 `<job_key>.refresh_targets` 를 조회(capture 전용).
+캡처 직전 새로고침할 대상 이름 목록(순서 유지). daily service 먹통 등으로 특정
+페이지를 새로고침에서 빼야 할 때 코드 수정 없이 yaml 로 조정한다. 폴백 없음:
+파일·job 키·필드 중 하나라도 없으면 예외로 죽는다. 대상 이름이 실제 캡처 대상
+(`KEYWORDS`)에 속하는지는 호출부(`jobs.capture`)가 검증한다. 빈 목록(`[]`)이면
+새로고침 자체를 생략한다.
+
 우선순위는 항상 **CLI 인자 > settings.yaml**. job 들은 다음 패턴으로 해석한다:
 
 ```python
@@ -97,11 +105,11 @@ class DailyConfig(BaseModel):
 ## common.settings
 
 `config/settings.yaml` 로더. `common.config` 가 import 시 사용한다. 외부에서 직접
-부를 일은 거의 없고, 보통 `config.get_headless` / `config.get_submit_by_enter`
-헬퍼로 조회한다.
+부를 일은 거의 없고, 보통 `config.get_headless` / `config.get_submit_by_enter` /
+`config.get_refresh_targets` 헬퍼로 조회한다.
 
 `settings.yaml` 은 **git 추적, 비밀값 금지**. `.env` / `daily.yaml` 과 달리 동작
-토글(headless / submit_by_enter)만 담는다.
+토글(headless / submit_by_enter / capture 의 refresh_targets)만 담는다.
 
 ### `load_settings(*, force: bool = False) -> SettingsConfig`
 settings.yaml 을 1회 로드해 캐시. **폴백 없음**(`daily.py` 가 부재를 `None` 으로
@@ -115,8 +123,9 @@ settings.yaml 을 1회 로드해 캐시. **폴백 없음**(`daily.py` 가 부재
 ```python
 class JobSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    headless: bool                       # 모든 job 필수
-    submit_by_enter: bool | None = None  # server / capture 만 의미
+    headless: bool                          # 모든 job 필수
+    submit_by_enter: bool | None = None     # server / capture 만 의미
+    refresh_targets: list[str] | None = None  # capture 만 의미
 
 class SettingsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")

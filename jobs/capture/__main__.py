@@ -54,7 +54,9 @@ KEYWORDS: Dict[str, str] = {
     "ETL": "ETL",
     "Dashboard": "Daily Service Inspection Dashboard",
 }
-REFRESH_TARGET_ORDER: Tuple[str, ...] = ("Dashboard", "Zenius")
+# 캡처 전 새로고침 대상은 settings.yaml(capture.refresh_targets)에서 읽는다.
+# daily service 먹통 등으로 특정 페이지를 새로고침에서 빼야 할 때 코드 수정 없이
+# yaml 로 조정하기 위함. 대상 이름은 KEYWORDS 의 키여야 한다.
 REFRESH_WAIT_SECONDS = 5.0
 TARGET_PROCESS = "chrome.exe"
 REQUIRE_CLASS_NAME = "Chrome_WidgetWin_1"
@@ -156,8 +158,23 @@ def _choose_target_window(
 def _refresh_targets_before_capture(
     left_monitor_rect: Tuple[int, int, int, int],
 ) -> None:
-    """Daily Service -> Zenius 순서로 캡처 대상 창을 새로고침한다."""
-    for target_name in REFRESH_TARGET_ORDER:
+    """settings.yaml(capture.refresh_targets) 순서대로 캡처 대상 창을 새로고침한다.
+
+    Raises:
+        RuntimeError: refresh_targets 에 ``KEYWORDS`` 에 없는 이름이 있는 경우
+            (yaml 오타 조기 발견). 빈 목록이면 새로고침 없이 통과한다.
+    """
+    refresh_targets = config.get_refresh_targets("capture")
+    unknown = [t for t in refresh_targets if t not in KEYWORDS]
+    if unknown:
+        raise RuntimeError(
+            f"settings.yaml capture.refresh_targets 에 알 수 없는 대상: {unknown} "
+            f"(가능: {list(KEYWORDS)})"
+        )
+    if not refresh_targets:
+        LOG.info("캡처 전 새로고침 대상 없음(capture.refresh_targets 비어 있음) -> 새로고침 생략")
+        return
+    for target_name in refresh_targets:
         window = _choose_target_window(target_name, left_monitor_rect)
         LOG.info(
             "캡처 전 새로고침: target=%s hwnd=0x%08X title=%r",

@@ -4,6 +4,9 @@
 #
 # headless        : 브라우저 헤드리스 여부 (false=헤드풀)
 # submit_by_enter : KWorks 업로드 후 Enter 최종등록 여부 (server/capture 전용)
+# refresh_targets : 캡처 직전 새로고침할 대상 목록(capture 전용, 순서 유지).
+#                   이름은 capture KEYWORDS 의 키(WhatsUp/Zenius/ETL/Dashboard).
+#                   빈 목록([])이면 새로고침 생략.
 
 zenius:
   headless: true
@@ -17,6 +20,9 @@ jennifer:
 capture:
   headless: true
   submit_by_enter: true
+  # daily service 먹통으로 Dashboard 새로고침 제외 중.
+  # 복구되면 ["Dashboard", "Zenius"] 로 되돌릴 것.
+  refresh_targets: ["Zenius"]
 
 server:
   headless: true
