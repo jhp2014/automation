@@ -37,11 +37,11 @@ jobs:
   # --- DailyService(SDS) 대시보드 모니터 (600초 주기) ---
   # 로그인 + 비정상 카운트 체크뿐이라 정상 run 은 짧다. 60s 면 충분하고, 초과
   # 시 hang 으로 보고 러너 안전망이 알린다.
-  - name: daily_service
-    module: jobs.daily_service
-    mode: interval
-    interval_sec: 600
-    timeout_sec: 60
+  # - name: daily_service
+  #   module: jobs.daily_service
+  #   mode: interval
+  #   interval_sec: 600
+  #   timeout_sec: 60
 
   # --- Jennifer 통합 점검 (600초 주기, Fail-Fast) ---
   # 정상 1회 run 은 4개 사이트 합쳐 ~40s. timeout 은 hang(예: WS 폭주로 Playwright
