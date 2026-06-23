@@ -143,14 +143,15 @@ notepad config\daily.yaml
 - 각 job 의 [START] → 로그인 도달 → [OK]/[END] 종료 로그 확인 (exit code 0)
 - 실패하면 평소처럼 알림이 전송되며, `logs/<job>.log` 의 마지막 `[FAIL] stage=` 라인부터 본다
 
-### 7-2) capture-baseline — 좌측 모니터 + 4개 창 인식 확인
+### 7-2) capture-baseline — 좌측 모니터 + 캡처 대상 창 인식 확인
 
-운영 사이트 4개 (WhatsUp / Zenius / ETL / Dashboard) 가 좌측 모니터에 떠 있는 상태에서:
+`config/settings.yaml` 의 `capture.required_targets` 에 적힌 운영 사이트가 좌측
+모니터에 떠 있는 상태에서:
 
 ```powershell
 .\scripts\capture-baseline.bat
 ```
-- 4개 창 매칭, 겹침 ≥90%, 가림 없음을 통과해야 baseline 생성
+- 대상 창 매칭, 겹침 ≥90%, 가림 없음을 통과해야 baseline 생성
 - 산출물: `screenshots/capture/baseline_left_monitor.png` + `latest_path.txt`
 - 실패 메시지 (`Missing targets`, `Minimized`, `Low overlap`, `Occlusion`) 를 보고 창 배치를 조정
 

@@ -17,7 +17,7 @@ scripts\jennifer.bat
 scripts\capture.bat
 scripts\server.bat           # 폴더 "8 전면"/"8 후면" 하드코딩 — 본 파일 편집해서 변경 가능
 
-# capture baseline 1회 생성 (운영 사이트 4개가 좌측 모니터에 떠 있어야 OK)
+# capture baseline 1회 생성 (config/settings.yaml 의 required_targets 가 좌측 모니터에 떠 있어야 OK)
 scripts\capture-baseline.bat
 ```
 
@@ -44,7 +44,7 @@ cd C:\Users\whdgn\Dev\kwop\automation
 |------|-----|------|----------|
 | `.env` | ignore | 거의 안 바뀜 | Pushover, Telegram, Supabase, 그 외 사이트별(Zenius/DailyService/Jennifer) 자격증명 |
 | `config/daily.yaml` | ignore | 매일 갱신 | `run_until`, KWorks 자격증명/제목, `jobs.server` 의 `times` |
-| `config/settings.yaml` | **추적** (비밀 아님) | 거의 안 바뀜 | job 별 `headless`, `submit_by_enter` 같은 동작 토글 |
+| `config/settings.yaml` | **추적** (비밀 아님) | 거의 안 바뀜 | job 별 `headless`, `submit_by_enter`, capture 대상 같은 동작 토글 |
 
 ### 1-A) `.env` (거의 안 바뀌는 비밀)
 
@@ -131,7 +131,7 @@ server_times:
   --folder "8 전면" --folder "8 후면" `
   --target-title "2026.05.29(금) 야간 OP관제 일일보고" --no-submit --no-headless
 
-# capture baseline (운영 사이트 4개가 좌측 모니터에 떠 있을 때 1회)
+# capture baseline (settings.yaml 의 capture.required_targets 가 좌측 모니터에 떠 있을 때 1회)
 .\.venv\Scripts\python.exe -m jobs.capture --make-baseline
 
 # capture 디버그: 첨부까지만(Enter 등록 생략) + 헤드풀

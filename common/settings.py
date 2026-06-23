@@ -10,7 +10,8 @@
     zenius:        {headless: bool}
     daily_service: {headless: bool}
     jennifer:      {headless: bool}
-    capture:       {headless: bool, submit_by_enter: bool, refresh_targets: list[str]}
+    capture:       {headless: bool, submit_by_enter: bool,
+                    refresh_targets: list[str], required_targets: list[str]}
     server:        {headless: bool, submit_by_enter: bool}
 
 ``common.daily`` 가 파일 부재를 None 으로 흡수하는 것과 달리, 본 로더는 파일 부재 /
@@ -42,9 +43,8 @@ class JobSettings(BaseModel):
     ``headless`` 는 모든 job 필수. ``submit_by_enter`` 는 server / capture 만
     의미가 있어 모델 수준에서는 선택이지만, 조회 헬퍼
     (:func:`common.config.get_submit_by_enter`) 가 None 이면 에러로 죽인다.
-    ``refresh_targets`` 는 capture 전용(캡처 전 새로고침 대상 목록)으로 동일하게
-    모델 수준 선택 + 조회 헬퍼(:func:`common.config.get_refresh_targets`)가 None
-    이면 에러로 죽인다.
+    ``refresh_targets`` / ``required_targets`` 는 capture 전용으로 동일하게 모델
+    수준 선택 + 조회 헬퍼가 None 이면 에러로 죽인다.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -52,6 +52,7 @@ class JobSettings(BaseModel):
     headless: bool
     submit_by_enter: Optional[bool] = None
     refresh_targets: Optional[List[str]] = None
+    required_targets: Optional[List[str]] = None
 
 
 class SettingsConfig(BaseModel):

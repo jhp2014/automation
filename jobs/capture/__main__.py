@@ -54,8 +54,8 @@ KEYWORDS: Dict[str, str] = {
     "ETL": "ETL",
     "Dashboard": "Daily Service Inspection Dashboard",
 }
-# 캡처 전 새로고침 대상은 settings.yaml(capture.refresh_targets)에서 읽는다.
-# daily service 먹통 등으로 특정 페이지를 새로고침에서 빼야 할 때 코드 수정 없이
+# 캡처 전 새로고침 대상과 레이아웃 검증 대상은 settings.yaml 에서 읽는다.
+# daily service 먹통 등으로 특정 페이지를 임시 제외해야 할 때 코드 수정 없이
 # yaml 로 조정하기 위함. 대상 이름은 KEYWORDS 의 키여야 한다.
 REFRESH_WAIT_SECONDS = 5.0
 TARGET_PROCESS = "chrome.exe"
@@ -191,6 +191,20 @@ def _refresh_targets_before_capture(
         time.sleep(REFRESH_WAIT_SECONDS)
 
 
+def _get_required_targets() -> dict[str, str]:
+    """settings.yaml(capture.required_targets)에 선언된 검증 대상만 반환한다."""
+    required_targets = config.get_required_targets("capture")
+    unknown = [t for t in required_targets if t not in KEYWORDS]
+    if unknown:
+        raise RuntimeError(
+            f"settings.yaml capture.required_targets 에 알 수 없는 대상: {unknown} "
+            f"(가능: {list(KEYWORDS)})"
+        )
+    if not required_targets:
+        raise RuntimeError("settings.yaml capture.required_targets 가 비어 있습니다")
+    return {name: KEYWORDS[name] for name in required_targets}
+
+
 def _validate_targets_and_layout(
     left_monitor_rect: Tuple[int, int, int, int],
 ) -> None:
@@ -200,7 +214,8 @@ def _validate_targets_and_layout(
         RuntimeError: 대상 누락, 최소화됨, 겹침 부족, 가려짐 중 하나라도 발생.
     """
     chrome_windows = _collect_capture_windows()
-    matched = W.match_targets(KEYWORDS, chrome_windows)
+    required_keywords = _get_required_targets()
+    matched = W.match_targets(required_keywords, chrome_windows)
 
     missing = []
     chosen: Dict[str, W.WindowInfo] = {}
@@ -241,7 +256,10 @@ def _validate_targets_and_layout(
     if occl_fail:
         raise RuntimeError("가림 감지: " + " ; ".join(occl_fail))
 
-    LOG.info("레이아웃 검증 OK (targets/overlap/occlusion)")
+    LOG.info(
+        "레이아웃 검증 OK (targets=%s/overlap/occlusion)",
+        list(required_keywords),
+    )
 
 
 def _write_latest_marker(image_path: Path) -> Path:

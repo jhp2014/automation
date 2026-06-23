@@ -7,9 +7,9 @@
       runner ``run_until``, ``jobs.server`` 의 ``times``). git ignore — 비밀값
       넣어도 안전.
     - ``config/settings.yaml`` : 거의 안 바뀌는 동작 토글 (job 별 headless,
-      KWorks 업로드 후 Enter 등록 여부, capture 새로고침 대상). **git 추적,
+      KWorks 업로드 후 Enter 등록 여부, capture 새로고침/검증 대상). **git 추적,
       비밀값 금지**. 조회는 :func:`get_headless` / :func:`get_submit_by_enter` /
-      :func:`get_refresh_targets` 헬퍼만 사용.
+      :func:`get_refresh_targets` / :func:`get_required_targets` 헬퍼만 사용.
 
 import 만으로 부작용 없음(디렉터리 생성·네트워크 X). 디렉터리는
 :func:`ensure_dirs` 호출 시에만 생성.
@@ -205,3 +205,29 @@ def get_refresh_targets(job_key: str) -> List[str]:
     if job.refresh_targets is None:
         raise RuntimeError(f"settings.yaml: {job_key}.refresh_targets 누락")
     return list(job.refresh_targets)
+
+
+def get_required_targets(job_key: str) -> List[str]:
+    """``settings.yaml`` 에서 ``<job_key>.required_targets`` 를 조회(capture 전용).
+
+    캡처 전 레이아웃/가림 검증을 반드시 통과해야 하는 대상 이름 목록이다.
+    daily service 먹통 등으로 특정 페이지를 임시 제외해야 할 때 코드 수정 없이
+    yaml 로 조정한다.
+
+    Args:
+        job_key: settings.yaml 최상위 job 키(``"capture"``).
+
+    Returns:
+        list[str] — 검증 대상 이름 목록.
+
+    Raises:
+        FileNotFoundError: settings.yaml 이 없는 경우.
+        RuntimeError: 파싱/스키마 실패, job 키 누락, 또는 required_targets 미설정.
+    """
+    cfg = load_settings()
+    job = getattr(cfg, job_key, None)
+    if job is None:
+        raise RuntimeError(f"settings.yaml: {job_key} 누락")
+    if job.required_targets is None:
+        raise RuntimeError(f"settings.yaml: {job_key}.required_targets 누락")
+    return list(job.required_targets)
