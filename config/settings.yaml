@@ -24,8 +24,8 @@ capture:
   # daily service 먹통으로 Dashboard 제외 중.
   # 복구되면 required_targets 에 "Dashboard" 를 추가하고
   # refresh_targets 를 ["Dashboard", "Zenius"] 로 되돌릴 것.
-  refresh_targets: ["Zenius"]
-  required_targets: ["WhatsUp", "Zenius", "ETL"]
+  refresh_targets: ["Dashboard", "Zenius"]
+  required_targets: ["WhatsUp", "Zenius", "ETL", "Dashboard"]
 
 server:
   headless: true
