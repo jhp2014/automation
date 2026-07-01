@@ -32,6 +32,11 @@ _log = get_logger("runner.state")
 RUNNER_STATE_PATH: Path = common_config.STATE_DIR / "runner.json"
 SCHEDULER_STATE_PATH: Path = common_config.STATE_DIR / "scheduler.json"
 
+# 백그라운드 종료 신호 파일. ``tools.runnerctl stop`` 이 작성하고, runner 본 루프가
+# 매 tick 확인해 존재하면 기존 ``kill_all_running`` 경로로 우아하게 종료한다.
+# 신호(SIGINT) 전달이 까다로운 Windows detached 실행에서도 안전하게 동작한다.
+STOP_FLAG_PATH: Path = common_config.STATE_DIR / "stop.flag"
+
 
 # ---------------------------------------------------------------------------
 # 기본값
@@ -41,6 +46,8 @@ def _default_runner_state() -> Dict[str, Any]:
     return {
         "running_pid": {},        # {"job_name": pid_int}
         "last_heartbeat_at": None,  # ISO 문자열(local time) 또는 None
+        "runner_pid": None,       # runner 본체 PID. 살아있으면 실행 중(정확).
+        "last_tick_at": None,     # 매 tick 갱신(Supabase 와 무관). 신선도 보조 지표.
     }
 
 
@@ -152,3 +159,34 @@ def cleanup_dead_pids(runner_state: Dict[str, Any]) -> List[str]:
 def update_last_run(scheduler_state: Dict[str, Any], job_name: str) -> None:
     """job 의 마지막 실행 시각을 지금으로 갱신한다."""
     scheduler_state.setdefault("last_run", {})[job_name] = datetime.now().isoformat()
+
+
+# ---------------------------------------------------------------------------
+# 종료 신호(stop.flag) 헬퍼
+# ---------------------------------------------------------------------------
+
+def request_stop() -> None:
+    """``stop.flag`` 를 작성한다(외부에서 runner 우아한 종료를 요청).
+
+    runner 본 루프가 매 tick :func:`stop_requested` 로 확인한다.
+    """
+    STOP_FLAG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    STOP_FLAG_PATH.write_text(datetime.now().isoformat(), encoding="utf-8")
+
+
+def stop_requested() -> bool:
+    """``stop.flag`` 존재 여부."""
+    return STOP_FLAG_PATH.exists()
+
+
+def clear_stop_flag() -> None:
+    """``stop.flag`` 를 제거한다(없으면 무시).
+
+    runner 시작 직후(이전 실행의 잔류 플래그 제거)와 종료 처리 직후 호출한다.
+    """
+    try:
+        STOP_FLAG_PATH.unlink()
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        _log.warning("stop.flag 제거 실패(무시): %r", e)
