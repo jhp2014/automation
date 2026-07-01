@@ -23,5 +23,5 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["common*", "jobs*", "site_selectors*", "runner*"]
+include = ["common*", "jobs*", "site_selectors*", "runner*", "tools*"]
 exclude = ["tests*"]

@@ -207,12 +207,66 @@ server_times:
 |------|------|
 | runner 로그 | `logs/runner.log` |
 | job 로그 | `logs/<job>.log` (예 `logs/zenius.log`) |
-| runner 상태 | `state/runner.json` (running_pid, last_heartbeat_at) |
+| runner 상태 | `state/runner.json` (running_pid, last_heartbeat_at, **runner_pid**, **last_tick_at**) |
 | 스케줄 상태 | `state/scheduler.json` (last_run, hourly_plan, one_time_done) |
+| 종료 신호 | `state/stop.flag` (`runnerctl stop` 이 작성, runner 가 감지 후 우아하게 종료) |
 | Jennifer 세션 | `state/jennifer/<name>_session.json` |
 | capture 산출물 | `screenshots/capture/` (baseline/latest/marker) |
 
-상태 파일을 손으로 지우면 다음 tick 에 기본값으로 재생성된다.
+상태 파일을 손으로 지우면 다음 tick 에 기본값으로 재생성된다. `runner_pid` 는 runner
+본체 PID(자식 job 의 `running_pid` 와 별개)로, `runnerctl` / `clean` 이 이 PID 의
+생존으로 "실행 중" 을 정확히 판정한다.
+
+## 4-B) 보조 스크립트 (`tools.*` + `scripts/*.bat`)
+
+매일 운영을 단순화하는 헬퍼 3종. 모두 `scripts/<name>.bat`(venv 파이썬 자동 사용)
+래퍼가 있고, 직접 `python -m tools.<name>` 로도 돌릴 수 있다.
+
+### gen-daily — `config/daily.yaml` 자동 생성
+
+`config/daily.base.yaml`(안 바뀌는 템플릿 원본, **git ignore**)에 그날 날짜만 입혀
+`config/daily.yaml` 을 만든다. `config/daily.base.yaml.example` 을 복사해 1회 세팅.
+
+```bat
+scripts\gen-daily.bat            REM 실행 시각으로 근무 자동 판정(08~10→주간09, 17~19→야간18, 20~22→야간21)
+scripts\gen-daily.bat 21         REM shift 직접 지정(윈도우 밖이거나 강제)
+scripts\gen-daily.bat -o hong    REM 자격증명 운영자 선택(operators 풀에서)
+scripts\gen-daily.bat -d 2026-07-02 --dry-run
+```
+
+- **운영기준일 D**: 실행 시각이 다음날 06시 전이면 '전날' 로 본다. 각 값의 날짜 =
+  `D + day`(base 의 `day` 오프셋; 0=당일, 1=다음날). 야간 새벽 캡처는 `day:1` 이라
+  자동으로 D+1 에 잡힌다.
+- **run_until**: 주간 = 당일 20:40, 야간 = 익일 08:40 (base 의 shift 별 정의).
+- 기존 `daily.yaml` 은 `daily.yaml.bak` 로 백업 후 덮어쓴다. 생성물은 즉시
+  `common.daily` 스키마로 검증한다.
+
+### runnerctl — runner 백그라운드 제어
+
+```bat
+scripts\runnerctl.bat start      REM 백그라운드로 기동(이미 실행 중이면 거부)
+scripts\runnerctl.bat status     REM runner_pid 생존 / last_tick 신선도 / 실행 중 job
+scripts\runnerctl.bat logs -f    REM runner.log 추적(끝 N줄: -n N)
+scripts\runnerctl.bat stop       REM stop.flag 작성 → 우아한 종료(무응답 시 taskkill /T /F 폴백)
+```
+
+`stop` 은 `taskkill /F` 로 바로 죽이지 않는다 — runner 가 stop.flag 를 감지해
+**스스로** 기존 자식 정리(`kill_all_running`) 경로로 내려가야 브라우저 등 자식이
+고아로 남지 않기 때문이다. 진행 중인 job 이 끝난 뒤 종료되므로 `--timeout`(기본 60s)
+안에 안 내려가면 그때 트리째 강제 종료한다.
+
+### clean — 로그·상태 정리
+
+```bat
+scripts\clean.bat                REM logs/* + state/runner.json,scheduler.json,stop.flag
+scripts\clean.bat --sessions     REM + jennifer 세션(지우면 다음 실행 때 재로그인)
+scripts\clean.bat --logs-only    REM 로그만
+scripts\clean.bat --dry-run
+```
+
+`runner_pid`(또는 살아있는 자식 job)가 감지되면 **삭제를 거부**한다(실행 중 삭제 시
+파일 잠금 충돌 + 상태 꼬임 방지). 먼저 `runnerctl stop` 으로 정지할 것. 정말 강행하려면
+`--force`. jennifer 세션은 재로그인 비용이 있어 `--sessions` 없이는 건드리지 않는다.
 
 ## 5) 트러블슈팅
 

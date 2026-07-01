@@ -12,10 +12,12 @@ dist/
 venv/
 env/
 
-# Env / secrets (.env 와 동격 — daily.yaml 도 비밀값을 담을 수 있다)
+# Env / secrets (.env 와 동격 — daily.yaml / daily.base.yaml 도 비밀값을 담을 수 있다)
 .env
 .env.local
 config/daily.yaml
+config/daily.yaml.bak
+config/daily.base.yaml
 
 # Logs / runtime state
 logs/
