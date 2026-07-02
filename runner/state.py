@@ -120,13 +120,56 @@ def save_scheduler_state(state: Dict[str, Any]) -> None:
 # PID 헬퍼
 # ---------------------------------------------------------------------------
 
-def is_pid_alive(pid: int) -> bool:
-    """``os.kill(pid, 0)`` 로 프로세스 생존 확인.
+def _win_pid_alive(pid: int) -> bool:
+    """Windows 전용 프로세스 생존 확인.
 
-    Windows / Unix 모두에서 동작. pid<=0 은 즉시 False.
+    Windows 에서 ``signal.CTRL_C_EVENT == 0`` 이라 ``os.kill(pid, 0)`` 은 존재
+    확인이 아니라 **Ctrl+C 전송** 으로 해석되어(다른 프로세스 그룹이면 WinError
+    87 로 실패) 생존 판정에 쓸 수 없다. 대신 ``OpenProcess`` 로 핸들을 얻어
+    ``WaitForSingleObject(h, 0)`` 이 ``WAIT_TIMEOUT`` 이면(=아직 신호 안 됨) 살아
+    있는 것으로 본다. 핸들 획득이 접근 거부(5)면 프로세스는 존재하는 것이다.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    SYNCHRONIZE = 0x00100000
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    ERROR_ACCESS_DENIED = 5
+    WAIT_TIMEOUT = 0x00000102
+
+    kernel32 = ctypes.windll.kernel32
+    # 64-bit 에서 HANDLE 절단을 막기 위해 시그니처를 명시한다.
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    handle = kernel32.OpenProcess(
+        SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+    )
+    if not handle:
+        # 접근은 거부됐지만(권한 부족) 프로세스 자체는 존재 → 살아있음으로 본다.
+        return kernel32.GetLastError() == ERROR_ACCESS_DENIED
+    try:
+        return kernel32.WaitForSingleObject(handle, 0) == WAIT_TIMEOUT
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def is_pid_alive(pid: int) -> bool:
+    """프로세스 생존 확인. pid<=0 은 즉시 False.
+
+    Windows 는 :func:`_win_pid_alive`(OpenProcess 기반), 그 외 POSIX 는
+    ``os.kill(pid, 0)`` 를 쓴다.
     """
     if pid <= 0:
         return False
+    if os.name == "nt":
+        try:
+            return _win_pid_alive(pid)
+        except Exception:
+            return False
     try:
         os.kill(pid, 0)
         return True
