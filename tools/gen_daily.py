@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -40,6 +41,44 @@ _BASE_DIR = Path(__file__).resolve().parent.parent
 DAILY_YAML_PATH: Path = _BASE_DIR / "config" / "daily.yaml"
 
 _WEEKDAYS_KR = "월화수목금토일"
+
+
+# ---------------------------------------------------------------------------
+# YAML 덤프 스타일 — 기존 수기 daily.yaml 형식에 맞춘다:
+#   1) 모든 값 문자열은 큰따옴표로(비밀번호에 !, :, # 등이 있어도 안전).
+#   2) 시퀀스를 키 아래로 들여쓴다(server_times:\n  - at: ...).
+# ---------------------------------------------------------------------------
+
+class _QuotedStr(str):
+    """큰따옴표로 강제 출력할 문자열 값(키는 감싸지 않으므로 따옴표 안 붙음)."""
+
+
+def _represent_quoted(dumper: yaml.Dumper, data: "_QuotedStr"):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data), style='"')
+
+
+class _IndentDumper(yaml.SafeDumper):
+    """시퀀스 항목을 부모 키 아래로 한 단 들여쓰는 Dumper."""
+
+    def increase_indent(self, flow=False, indentless=False):  # noqa: D401
+        return super().increase_indent(flow, False)
+
+
+_IndentDumper.add_representer(_QuotedStr, _represent_quoted)
+
+
+def _quote_values(obj: Any) -> Any:
+    """dict/list 를 재귀적으로 훑어 '값' 문자열만 :class:`_QuotedStr` 로 감싼다.
+
+    dict 의 키는 감싸지 않아 ``run_until:`` 처럼 따옴표 없이 남는다.
+    """
+    if isinstance(obj, dict):
+        return {k: _quote_values(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_quote_values(v) for v in obj]
+    if isinstance(obj, str):
+        return _QuotedStr(obj)
+    return obj
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +172,15 @@ def _dump_yaml(daily: Dict[str, Any], shift_key: str, operator_key: str) -> str:
         f"shift={shift_key} | operator={operator_key}\n"
         "# =============================================================================\n"
     )
-    body = yaml.safe_dump(daily, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    body = yaml.dump(
+        _quote_values(daily),
+        Dumper=_IndentDumper,
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+    )
+    # 최상위 섹션(run_until 제외) 앞에 빈 줄을 넣어 기존 수기 형식과 맞춘다.
+    body = re.sub(r"\n(?=(kworks|server_times):)", "\n\n", body)
     return header + body
 
 
