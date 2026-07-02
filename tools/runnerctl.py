@@ -81,8 +81,11 @@ def cmd_start(_args) -> int:
 
     creationflags = 0
     if os.name == "nt":
-        # DETACHED_PROCESS: 부모 콘솔에서 분리. NEW_PROCESS_GROUP: 신호 격리.
-        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        # CREATE_NO_WINDOW: 콘솔 창 없이 백그라운드로 실행(빈 검은 창 방지).
+        #   DETACHED_PROCESS 는 콘솔 앱(python.exe)에 새 콘솔 창을 띄우는 경우가
+        #   있어 쓰지 않는다. CREATE_NO_WINDOW 는 자체 콘솔을 갖되 창을 숨긴다.
+        # CREATE_NEW_PROCESS_GROUP: 부모 콘솔의 Ctrl+C / 종료로부터 격리(생존).
+        creationflags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
 
     subprocess.Popen(
         [sys.executable, "-m", "runner"],
