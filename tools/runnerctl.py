@@ -7,9 +7,9 @@
     runner 가 *스스로* 기존 ``kill_all_running`` 경로로 우아하게 내려가게 한다.
 
 명령:
-    start          백그라운드로 runner 기동(이미 실행 중이면 거부).
-    status         runner_pid 생존 / last_tick 신선도 / 실행 중 job 표시.
-    logs [-f] [-n] runner.log 끝부분 출력(-f 면 추적).
+    start              백그라운드로 runner 기동(이미 실행 중이면 거부).
+    status             runner_pid 생존 / last_tick 신선도 / 실행 중 job 표시.
+    logs [-f] [-n] [-b] runner.log 출력(-f 추적, -b 면 마지막 기동 설정 블록).
     stop [--timeout N]  stop.flag 작성 → 종료 대기 → 무응답 시 taskkill 폴백.
 
 사용 예::
@@ -17,6 +17,7 @@
     python -m tools.runnerctl start
     python -m tools.runnerctl status
     python -m tools.runnerctl logs -f
+    python -m tools.runnerctl logs --boot   # 마지막 기동 시 설정 요약 확인
     python -m tools.runnerctl stop
 """
 
@@ -141,15 +142,35 @@ def cmd_logs(args) -> int:
         print(f"[runnerctl] 로그 파일 없음: {_RUNNER_LOG}", file=sys.stderr)
         return 1
 
-    # 끝에서 n 줄 출력.
     with _RUNNER_LOG.open("r", encoding="utf-8", errors="replace") as f:
         lines = f.readlines()
-        tail = lines[-args.lines:] if args.lines > 0 else lines
-        sys.stdout.write("".join(tail))
-        if not args.follow:
-            return 0
 
-        # follow: 파일 끝에서부터 새 줄을 계속 출력(Ctrl+C 로 중단).
+    # --boot: 뒤에서부터 마지막 [RUNNER START] 를 찾아 그 지점부터 n 줄 출력.
+    # 기동 직후의 설정 요약 블록(설정 로드 OK / [DAILY] / [RUNLIMIT])을 본다.
+    if args.boot:
+        start_idx = next(
+            (i for i in range(len(lines) - 1, -1, -1) if "[RUNNER START]" in lines[i]),
+            None,
+        )
+        if start_idx is None:
+            print(
+                "[runnerctl] '[RUNNER START]' 마커를 찾지 못했습니다"
+                "(로그가 로테이션되었을 수 있음 — runner.log.1 확인).",
+                file=sys.stderr,
+            )
+            return 1
+        count = args.lines if args.lines > 0 else len(lines)
+        sys.stdout.write("".join(lines[start_idx : start_idx + count]))
+        return 0
+
+    # 끝에서 n 줄 출력.
+    tail = lines[-args.lines:] if args.lines > 0 else lines
+    sys.stdout.write("".join(tail))
+    if not args.follow:
+        return 0
+
+    # follow: 파일 끝에서부터 새 줄을 계속 출력(Ctrl+C 로 중단).
+    with _RUNNER_LOG.open("r", encoding="utf-8", errors="replace") as f:
         f.seek(0, os.SEEK_END)
         try:
             while True:
@@ -221,8 +242,9 @@ def _parse_args(argv) -> argparse.Namespace:
     sub.add_parser("status", help="실행 상태 표시.")
 
     p_logs = sub.add_parser("logs", help="runner.log 출력.")
-    p_logs.add_argument("-n", "--lines", type=int, default=40, help="끝에서 N줄(기본 40).")
+    p_logs.add_argument("-n", "--lines", type=int, default=40, help="줄 수(기본 40). tail 이면 끝, --boot 면 시작부터.")
     p_logs.add_argument("-f", "--follow", action="store_true", help="새 로그를 계속 추적.")
+    p_logs.add_argument("-b", "--boot", action="store_true", help="마지막 [RUNNER START] 이후 설정 요약 블록을 출력.")
 
     p_stop = sub.add_parser("stop", help="우아한 종료(무응답 시 강제).")
     p_stop.add_argument("--timeout", type=int, default=60, help="우아한 종료 대기 초(기본 60).")

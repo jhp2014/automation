@@ -60,6 +60,7 @@ scripts\runnerctl.bat start            REM 백그라운드 기동(이미 실행 
 scripts\runnerctl.bat status           REM runner_pid 생존 / last_tick / 실행 중 job
 scripts\runnerctl.bat logs             REM runner.log 끝 40줄
 scripts\runnerctl.bat logs -f          REM 실시간 추적(-n N 으로 줄 수 조정, Ctrl+C 중단)
+scripts\runnerctl.bat logs --boot      REM 마지막 기동 시 설정 요약(설정 로드 OK / [DAILY] / run_until)
 scripts\runnerctl.bat stop             REM 우아한 종료
 scripts\runnerctl.bat stop --timeout 90
 ```

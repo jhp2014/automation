@@ -247,6 +247,7 @@ scripts\gen-daily.bat -d 2026-07-02 --dry-run
 scripts\runnerctl.bat start      REM 백그라운드로 기동(이미 실행 중이면 거부)
 scripts\runnerctl.bat status     REM runner_pid 생존 / last_tick 신선도 / 실행 중 job
 scripts\runnerctl.bat logs -f    REM runner.log 추적(끝 N줄: -n N)
+scripts\runnerctl.bat logs --boot REM 마지막 [RUNNER START] 이후 설정 요약 블록
 scripts\runnerctl.bat stop       REM stop.flag 작성 → 우아한 종료(무응답 시 taskkill /T /F 폴백)
 ```
 
