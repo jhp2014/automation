@@ -330,17 +330,36 @@ def _force_foreground(hwnd: int) -> bool:
     attached_fg = False
     attached_target = False
     try:
-        if fg:
-            fg_thread, _ = win32process.GetWindowThreadProcessId(fg)
-        target_thread, _ = win32process.GetWindowThreadProcessId(hwnd)
-        if fg_thread and fg_thread != cur_thread:
-            attached_fg = win32process.AttachThreadInput(cur_thread, fg_thread, True)
-        if target_thread and target_thread not in (cur_thread, fg_thread):
-            attached_target = win32process.AttachThreadInput(
-                cur_thread, target_thread, True
-            )
+        try:
+            if fg:
+                fg_thread, _ = win32process.GetWindowThreadProcessId(fg)
+            target_thread, _ = win32process.GetWindowThreadProcessId(hwnd)
+        except Exception:
+            pass
 
-        win32gui.BringWindowToTop(hwnd)
+        # AttachThreadInput은 세션 잠김·보안 데스크톱·상위 권한(elevated) 창이
+        # foreground일 때 error(5, 'AttachThreadInput', '액세스가 거부되었습니다.')
+        # 를 던진다. 예외가 새어 나가면 캡처 잡 전체가 죽으므로(이 함수는 독스트링
+        # 계약상 예외를 던지지 않아야 한다) attach만 포기하고 나머지 기법으로 진행한다.
+        # 성공 시 pywin32는 None을 반환하므로 반환값 대신 예외 유무로 attach 여부를
+        # 판정해야 finally의 detach가 올바르게 동작한다.
+        if fg_thread and fg_thread != cur_thread:
+            try:
+                win32process.AttachThreadInput(cur_thread, fg_thread, True)
+                attached_fg = True
+            except Exception:
+                attached_fg = False
+        if target_thread and target_thread not in (cur_thread, fg_thread):
+            try:
+                win32process.AttachThreadInput(cur_thread, target_thread, True)
+                attached_target = True
+            except Exception:
+                attached_target = False
+
+        try:
+            win32gui.BringWindowToTop(hwnd)
+        except Exception:
+            pass
         try:
             win32gui.SetForegroundWindow(hwnd)
         except Exception:
