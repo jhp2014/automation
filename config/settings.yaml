@@ -24,7 +24,10 @@ capture:
   # daily service 먹통으로 Dashboard 제외 중.
   # 복구되면 required_targets 에 "Dashboard" 를 추가하고
   # refresh_targets 를 ["Dashboard", "Zenius"] 로 되돌릴 것.
-  refresh_targets: ["Dashboard", "Zenius"]
+  #
+  # WhatsUp 은 중간에 둔다: 목록의 마지막 대상이 최종 foreground 로 남아 그대로
+  # 캡처되므로, 기존 최종 상태(Zenius)를 바꾸지 않기 위함.
+  refresh_targets: ["Dashboard", "WhatsUp", "Zenius"]
   required_targets: ["WhatsUp", "Zenius", "ETL", "Dashboard"]
 
 server:
