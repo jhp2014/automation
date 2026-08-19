@@ -13,6 +13,7 @@ scripts\runner.bat
 # 개별 job
 scripts\zenius.bat
 scripts\daily_service.bat
+scripts\whatsup.bat          # --dry-run 이면 알림/상태 저장 없이 파싱 결과만
 scripts\jennifer.bat
 scripts\capture.bat
 scripts\server.bat           # 폴더 "8 전면"/"8 후면" 하드코딩 — 본 파일 편집해서 변경 가능

@@ -97,6 +97,7 @@ runner 없이 개별 job 을 1회 돌릴 때 사용한다. 상세·인자는
 | `scripts\capture-baseline.bat` | 캡처 baseline 갱신 |
 | `scripts\zenius.bat` / `scripts\zenius-baseline.bat` | Zenius 수집 / baseline |
 | `scripts\daily_service.bat` | DailyService 작업 |
+| `scripts\whatsup.bat` | WhatsUp(NMS) 맵별 Items Down 점검 (`--dry-run` 이면 알림·상태 저장 생략) |
 | `scripts\jennifer.bat` | Jennifer 수치 수집 |
 
 ---
