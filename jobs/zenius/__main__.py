@@ -27,8 +27,9 @@ import argparse
 import json
 import os
 import re
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Dict, Optional
 
 from playwright.sync_api import (
     BrowserContext,
@@ -39,6 +40,7 @@ from playwright.sync_api import (
 from common import config
 from common.browser import save_storage_state, sync_browser
 from common.config import TelegramTarget, get_telegram_target
+from common.contacts import Contact, load_contacts
 from common.logging import get_logger
 from common.notify import (
     send_pushover_emergency,
@@ -60,8 +62,11 @@ THRESHOLD_SEC = 9 * 60
 # 보고 대상이 이 수 이상이면 폭풍으로 간주: 개별 보고/사진/SMS조회를 생략하고
 # 요약 1건만 보낸 뒤 현재 경고 집합 전부를 보고 완료(reported)로 흡수한다.
 STORM_CAP = 4
-# 보고서 양식의 "전파내용" 끝에 들어가는 접촉 방식.
-CONTACT_METHOD = "유선"
+# 보고서 양식의 "전파내용" 끝에 들어가는 접촉 방식 — 심각도에 따라 분기.
+# 치명/긴급은 유선, 그 아래(위험/주의/무해)는 메신저.
+PHONE_SEVERITIES = {"치명", "긴급"}
+CONTACT_METHOD_PHONE = "유선"
+CONTACT_METHOD_MESSENGER = "메신저"
 
 # 캡처가 짤리지 않도록 큰 뷰포트 고정(원본 패턴).
 BROWSER_WINDOW_WIDTH = 1920
@@ -275,6 +280,7 @@ def scan_critical_rows(page: Page) -> list[dict]:
         groupname = _cell_text(row, Z.SEL_TD_GROUP)
         hostname = _cell_text(row, Z.SEL_TD_HOST)
         evttime = _cell_text(row, Z.SEL_TD_EVTTIME)
+        infra = _cell_text(row, Z.SEL_TD_WNAME)
 
         if severity in CRITICAL_TITLES and status not in IGNORE_STATUSES:
             found.append({
@@ -288,22 +294,77 @@ def scan_critical_rows(page: Page) -> list[dict]:
                 "group": groupname,
                 "host": hostname,
                 "evttime": evttime,
+                "infra": infra,
             })
 
     return found
 
 
 # ---------------------------------------------------------------------------
-# SMS 간편검색 (담당자 조회)
+# 인프라별 간편검색 (담당자 조회) — SMS / NMS / FMS
 # ---------------------------------------------------------------------------
 
-def wait_sms_grid_idle(page: Page, timeout_ms: int = 20000) -> None:
-    """SMS jqGrid 로딩 레이어가 사라질 때까지 대기한다.
+@dataclass(frozen=True)
+class InfraScreen:
+    """인프라별 담당자 조회 화면의 셀렉터 묶음."""
+
+    key: str          # 캡처 파일명 접두사 겸 로그 라벨 (소문자)
+    menu: str
+    grid: str
+    rows: str
+    search_input: str
+    search_btn: str
+    loading_text: str
+    loading_mask: str
+    td_owner: str
+
+
+# EMS 이벤트의 인프라명(z_wname) -> 조회 화면. 여기 없는 인프라는 조회를
+# 생략하고 담당자 미확인으로 보고한다.
+INFRA_SCREENS: dict[str, InfraScreen] = {
+    "SMS": InfraScreen(
+        key="sms",
+        menu=Z.SEL_SMS_MENU,
+        grid=Z.SEL_SMS_GRID,
+        rows=Z.SEL_SMS_ROWS,
+        search_input=Z.SEL_SMS_SEARCH_INPUT,
+        search_btn=Z.SEL_SMS_SEARCH_BTN,
+        loading_text=Z.SEL_SMS_LOADING_TEXT,
+        loading_mask=Z.SEL_SMS_LOADING_MASK,
+        td_owner=Z.SEL_SMS_TD_OWNER,
+    ),
+    "NMS": InfraScreen(
+        key="nms",
+        menu=Z.SEL_NMS_MENU,
+        grid=Z.SEL_NMS_GRID,
+        rows=Z.SEL_NMS_ROWS,
+        search_input=Z.SEL_NMS_SEARCH_INPUT,
+        search_btn=Z.SEL_NMS_SEARCH_BTN,
+        loading_text=Z.SEL_NMS_LOADING_TEXT,
+        loading_mask=Z.SEL_NMS_LOADING_MASK,
+        td_owner=Z.SEL_NMS_TD_OWNER,
+    ),
+    "FMS": InfraScreen(
+        key="fms",
+        menu=Z.SEL_FMS_MENU,
+        grid=Z.SEL_FMS_GRID,
+        rows=Z.SEL_FMS_ROWS,
+        search_input=Z.SEL_FMS_SEARCH_INPUT,
+        search_btn=Z.SEL_FMS_SEARCH_BTN,
+        loading_text=Z.SEL_FMS_LOADING_TEXT,
+        loading_mask=Z.SEL_FMS_LOADING_MASK,
+        td_owner=Z.SEL_FMS_TD_OWNER,
+    ),
+}
+
+
+def wait_grid_idle(page: Page, screen: InfraScreen, timeout_ms: int = 20000) -> None:
+    """jqGrid 로딩 레이어가 사라질 때까지 대기한다.
 
     로딩 레이어가 아예 없는 환경(렌더 없이 갱신)에서는 networkidle로 폴백한다.
     """
-    loading_text = page.locator(Z.SEL_SMS_LOADING_TEXT)
-    loading_mask = page.locator(Z.SEL_SMS_LOADING_MASK)
+    loading_text = page.locator(screen.loading_text)
+    loading_mask = page.locator(screen.loading_mask)
 
     had_any = False
 
@@ -328,49 +389,57 @@ def wait_sms_grid_idle(page: Page, timeout_ms: int = 20000) -> None:
         page.wait_for_timeout(300)
 
 
-def click_sms_and_wait_loaded(page: Page) -> None:
-    """SMS 메뉴 진입 후 간편검색 영역이 보일 때까지 대기한다."""
-    page.wait_for_selector(Z.SEL_SMS_MENU, state="visible", timeout=15000)
-    page.click(Z.SEL_SMS_MENU)
-    page.wait_for_selector(Z.SEL_SMS_GRID, state="attached", timeout=20000)
-    page.wait_for_selector(Z.SEL_SMS_SEARCH_INPUT, state="visible", timeout=20000)
-    page.wait_for_selector(Z.SEL_SMS_SEARCH_BTN, state="visible", timeout=20000)
+def click_infra_and_wait_loaded(page: Page, screen: InfraScreen) -> None:
+    """인프라 메뉴 진입 후 간편검색 영역이 보일 때까지 대기한다."""
+    page.wait_for_selector(screen.menu, state="visible", timeout=15000)
+    page.click(screen.menu)
+    page.wait_for_selector(screen.grid, state="attached", timeout=20000)
+    page.wait_for_selector(screen.search_input, state="visible", timeout=20000)
+    page.wait_for_selector(screen.search_btn, state="visible", timeout=20000)
 
 
-def lookup_owner_in_sms(page: Page, host: str) -> tuple[str, str]:
-    """SMS 간편검색으로 담당자(위치)와 검색 결과 캡처 경로를 얻는다.
+def lookup_owner(page: Page, screen: InfraScreen, host: str) -> tuple[str, str]:
+    """인프라 화면의 간편검색으로 담당자 셀 값과 캡처 경로를 얻는다.
+
+    담당자 셀 위치는 인프라마다 다르다: SMS=위치(z_mylocate),
+    NMS=담당자 연락처(z_contact), FMS=설명(z_mydesc). 셀 값은 쉼표로 구분된
+    복수 이름일 수 있으며 그대로 반환한다(분해는 메시지 조립부에서).
 
     현장 가정: host 검색 결과는 1행만 반환된다. 다중 행이면 첫 행을 쓰고
     경고 로그를 남긴다.
 
     Args:
-        page: SMS 메뉴까지 진입한 페이지.
-        host: 검색할 호스트명.
+        page: 해당 인프라 메뉴까지 진입한 페이지.
+        screen: 인프라별 셀렉터 묶음.
+        host: 검색할 호스트명(장비명/설비명).
 
     Returns:
-        ``(owner, sms_screenshot_path)``. 결과가 없거나 실패하면 owner는 "".
+        ``(owner_cell, screenshot_path)``. 결과가 없거나 실패하면 owner_cell은 "".
         검색 자체는 했고 결과가 없을 때만 _noresult 캡처 경로를 돌려준다.
     """
     host = (host or "").strip()
     if not host:
         return "", ""
 
-    page.locator(Z.SEL_SMS_SEARCH_INPUT).fill("")
-    page.locator(Z.SEL_SMS_SEARCH_INPUT).fill(host)
-    page.locator(Z.SEL_SMS_SEARCH_BTN).click()
+    page.locator(screen.search_input).fill("")
+    page.locator(screen.search_input).fill(host)
+    page.locator(screen.search_btn).click()
 
     try:
-        wait_sms_grid_idle(page, timeout_ms=20000)
+        wait_grid_idle(page, screen, timeout_ms=20000)
     except PWTimeoutError:
         return "", ""
 
-    rows = page.locator(Z.SEL_SMS_ROWS)
+    rows = page.locator(screen.rows)
     if rows.count() == 0:
-        return "", capture_sms(page, suffix=f"sms_{safe_filename(host)}_noresult")
+        return "", capture_lookup(
+            page, suffix=f"{screen.key}_{safe_filename(host)}_noresult"
+        )
 
     if rows.count() > 1:
         LOG.warning(
-            "SMS 검색 결과가 2행 이상(현장 가정과 다름). host=%s rows=%d -> 첫 행 사용",
+            "%s 검색 결과가 2행 이상(현장 가정과 다름). host=%s rows=%d -> 첫 행 사용",
+            screen.key.upper(),
             host,
             rows.count(),
         )
@@ -381,27 +450,90 @@ def lookup_owner_in_sms(page: Page, host: str) -> tuple[str, str]:
     except Exception:
         return "", ""
 
-    owner_td = first.locator(Z.SEL_SMS_TD_OWNER).first
+    owner_td = first.locator(screen.td_owner).first
     owner = (owner_td.get_attribute("title") or owner_td.inner_text() or "").strip()
 
-    sms_img = capture_sms(page, suffix=f"sms_{safe_filename(host)}")
-    return owner, sms_img
+    img = capture_lookup(page, suffix=f"{screen.key}_{safe_filename(host)}")
+    return owner, img
 
 
 # ---------------------------------------------------------------------------
 # 보고 / 캡처
 # ---------------------------------------------------------------------------
 
-def build_report_message(event: dict, owner: str) -> str:
-    """원본 보고서 양식을 그대로 재현한다."""
-    now_hm = datetime.now().strftime("%H:%M")
-    owner_text = owner if owner else "담당자 미확인"
+def parse_owner_names(owner_cell: str) -> list[str]:
+    """담당자 셀 값(쉼표 구분 복수 이름 가능)을 이름 리스트로 분해한다."""
+    return [n.strip() for n in (owner_cell or "").split(",") if n.strip()]
+
+
+def format_contact(name: str, contacts: Dict[str, Contact]) -> str:
+    """이름을 ``팀 이름 직책`` 으로 조립한다.
+
+    contacts.yaml 에 없는 이름은 플레이스홀더로 표기해 사람이 수기로
+    고칠 자리를 눈에 띄게 남긴다.
+    """
+    c = contacts.get(name)
+    if c is not None:
+        return f"{c.team} {name} {c.title}"
+    return f"[팀미확인] {name} [직책미확인]"
+
+
+def pick_primary_name(names: list[str], contacts: Dict[str, Contact]) -> str:
+    """메시지 본문에 넣을 정담당자를 고른다.
+
+    팀/직책 매핑이 성공한 첫 번째 사람을 우선하고, 전원 매핑 실패면
+    목록의 첫 번째 사람을 쓴다(플레이스홀더 표기).
+    """
+    for n in names:
+        if n in contacts:
+            return n
+    return names[0] if names else ""
+
+
+def contact_method_for(severity: str) -> str:
+    """심각도에 따른 전파 방식: 치명/긴급=유선, 그 외=메신저."""
     return (
+        CONTACT_METHOD_PHONE
+        if severity in PHONE_SEVERITIES
+        else CONTACT_METHOD_MESSENGER
+    )
+
+
+def build_report_message(
+    event: dict,
+    owner_cell: str,
+    contacts: Dict[str, Contact],
+) -> str:
+    """원본 보고서 양식을 재현하고, 담당자 팀/직책과 전파 방식을 채운다.
+
+    담당자가 여러 명이면 정담당자(매핑 성공 우선) 1명을 본문에 넣고,
+    나머지는 하단 ``[기타 담당자]`` 목록으로 붙여 사람이 쉽게 교체할 수
+    있게 한다.
+    """
+    now_hm = datetime.now().strftime("%H:%M")
+    method = contact_method_for(event.get("severity", ""))
+
+    names = parse_owner_names(owner_cell)
+    if names:
+        primary = pick_primary_name(names, contacts)
+        owner_text = format_contact(primary, contacts)
+    else:
+        primary = ""
+        owner_text = "담당자 미확인"
+
+    msg = (
         f"1. 발생일시 : {event.get('evttime', '')}\n"
         f"2. 서비스명 : {event.get('group', '')} {event.get('host', '')}\n"
         f"3. 이슈현상 : {event.get('title', '')} {event.get('msg', '')}\n"
-        f"4. 전파내용 : {now_hm} {owner_text} 내용전파완료({CONTACT_METHOD})"
+        f"4. 전파내용 : {now_hm} {owner_text} 내용전파완료({method})"
     )
+
+    others = [n for n in names if n != primary]
+    if others:
+        msg += "\n\n[기타 담당자]\n" + "\n".join(
+            f"- {format_contact(n, contacts)}" for n in others
+        )
+    return msg
 
 
 def build_storm_summary(crit: list[dict], candidates: list[dict]) -> str:
@@ -469,8 +601,8 @@ def capture_ems(page: Page) -> str:
     return str(path)
 
 
-def capture_sms(page: Page, suffix: str = "sms") -> str:
-    """SMS 화면을 full_page로 캡처해 경로를 반환한다."""
+def capture_lookup(page: Page, suffix: str = "lookup") -> str:
+    """담당자 조회 화면(SMS/NMS/FMS)을 full_page로 캡처해 경로를 반환한다."""
     SCREEN_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = SCREEN_DIR / f"{suffix}_{ts}.png"
@@ -601,6 +733,15 @@ def main() -> int:
     target_report = _safe_get_target("report")
     target_heartbeat = _safe_get_target("heartbeat")
 
+    # 담당자 팀/직책 매핑 — 보조 데이터이므로 실패해도 job은 계속 돈다
+    # (매핑이 비면 메시지에 플레이스홀더가 들어가 사람이 바로 알아챈다).
+    contacts: Dict[str, Contact] = {}
+    try:
+        contacts = load_contacts()
+        LOG.info("contacts.yaml 로드: %d명", len(contacts))
+    except Exception as e:
+        LOG.warning("contacts.yaml 로드 실패(빈 매핑으로 진행): %r", e)
+
     # heartbeat: 매 실행 시작에 전송 (every_run 정책).
     if target_heartbeat is not None:
         send_telegram_message(
@@ -683,38 +824,60 @@ def main() -> int:
             LOG.info("[STAGE] %s", stage)
             ems_img = capture_ems(page)
 
-            stage = "open_sms"
-            LOG.info("[STAGE] %s", stage)
-            sms_ready = True
-            try:
-                click_sms_and_wait_loaded(page)
-            except Exception as e:
-                sms_ready = False
-                LOG.warning("SMS 페이지 이동 실패(담당자 미확인으로 진행): %r", e)
-
             stage = "per_event_report"
             LOG.info("[STAGE] %s", stage)
-            for ev in candidates:
-                owner = ""
-                sms_img = ""
-                if sms_ready:
-                    try:
-                        owner, sms_img = lookup_owner_in_sms(page, ev["host"])
-                    except Exception as e:
-                        LOG.warning("SMS 담당자 조회 실패(계속 진행): host=%s err=%r", ev["host"], e)
 
-                report_msg = build_report_message(ev, owner)
+            # 인프라 메뉴는 필요한 시점에 1회만 연다. 진입 실패한 인프라는
+            # 재시도하지 않고 해당 이벤트들을 담당자 미확인으로 보고한다.
+            current_infra: Optional[str] = None
+            failed_infras: set[str] = set()
+
+            for ev in candidates:
+                infra = (ev.get("infra") or "").strip().upper()
+                screen = INFRA_SCREENS.get(infra)
+
+                owner = ""
+                lookup_img = ""
+
+                if screen is None:
+                    LOG.warning(
+                        "미지원 인프라(담당자 미확인으로 진행): infra=%r host=%s",
+                        ev.get("infra"), ev["host"],
+                    )
+                elif infra not in failed_infras:
+                    if current_infra != infra:
+                        try:
+                            click_infra_and_wait_loaded(page, screen)
+                            current_infra = infra
+                        except Exception as e:
+                            failed_infras.add(infra)
+                            LOG.warning(
+                                "%s 페이지 이동 실패(담당자 미확인으로 진행): %r",
+                                infra, e,
+                            )
+
+                    if current_infra == infra:
+                        try:
+                            owner, lookup_img = lookup_owner(page, screen, ev["host"])
+                        except Exception as e:
+                            LOG.warning(
+                                "%s 담당자 조회 실패(계속 진행): host=%s err=%r",
+                                infra, ev["host"], e,
+                            )
+
+                report_msg = build_report_message(ev, owner, contacts)
 
                 if target_report is not None:
                     # 사진 전송 실패는 notify 내부에서 경고만 남기고 swallow되므로
                     # 별도 fallback 분기는 불필요하지만, EMS 캡처 누락 케이스를
                     # 대비해 text도 함께 보낸다.
                     send_telegram_photo(target_report, report_msg, ems_img)
-                    if sms_img:
+                    if lookup_img:
                         send_telegram_photo(
                             target_report,
-                            f"[SMS] host={ev.get('host', '')} / 담당자={owner or '미확인'}",
-                            sms_img,
+                            f"[{infra or '?'}] host={ev.get('host', '')} / "
+                            f"담당자={owner or '미확인'}",
+                            lookup_img,
                         )
                 else:
                     LOG.warning("Telegram(report) 타깃 없음 -> 보고 메시지 콘솔만: %s", report_msg)

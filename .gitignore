@@ -19,6 +19,13 @@ config/daily.yaml
 config/daily.yaml.bak
 config/daily.base.yaml
 
+# 담당자 실명 매핑 — 예제(contacts.yaml.example)만 추적
+config/contacts.yaml
+
+# 사내 시스템 화면 저장본(내부 IP/실명 포함) — 로컬 참고용으로만 보관
+docs/zenius/
+docs/samples/
+
 # Logs / runtime state
 logs/
 state/
