@@ -523,6 +523,9 @@ def build_report_message(
         owner_text = "담당자 미확인"
 
     msg = (
+        "안녕하세요. OP관제실 입니다.\n"
+        "아래 이슈 확인 부탁드립니다.\n"
+        "\n"
         f"1. 발생일시 : {event.get('evttime', '')}\n"
         f"2. 서비스명 : {event.get('group', '')} {event.get('host', '')}\n"
         f"3. 이슈현상 : {event.get('title', '')} {event.get('msg', '')}\n"
