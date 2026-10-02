@@ -9,12 +9,18 @@
       플레이스홀더가 들어가므로 사람이 바로 알아챌 수 있다). 파싱/스키마
       오류는 raise 하되, 호출부(job)가 잡아서 경고 후 빈 매핑으로 계속한다.
 
-스키마 (동명이인은 리스트로 — 첫 항목이 우선 후보)::
+스키마 — 동명이인은 두 가지 방법 모두 지원(파일에 적힌 순서가 우선순위)::
 
-    우상원: {team: IT개발지원팀, title: 파트장}
+    # 1) 리스트로 기입
     홍길동:
       - {team: 정보보안팀, title: 책임}
       - {team: 네트워크팀, title: 선임}
+
+    # 2) 같은 이름을 여러 번 기입 — 사람이 자연스럽게 저지르는 실수까지
+    #    데이터 손실 없이 병합한다(일반 YAML 로더는 마지막 값으로 조용히
+    #    덮어쓰므로, 본 로더는 노드 수준에서 직접 읽어 중복 키를 합친다).
+    홍길동: {team: 정보보안팀, title: 책임}
+    홍길동: {team: 네트워크팀, title: 선임}
 """
 
 from __future__ import annotations
@@ -68,21 +74,41 @@ def load_contacts(*, force: bool = False) -> Dict[str, List[Contact]]:
         _cached = {}
         return _cached
 
+    # 중복 키 보존을 위해 safe_load 대신 노드 수준으로 읽는다. 일반 로더는
+    # 같은 이름이 두 번 나오면 마지막 값으로 **조용히 덮어써** 앞 항목이
+    # 사라지므로, 최상위 매핑의 (키, 값) 쌍을 순서대로 직접 꺼낸다.
+    text = CONTACTS_YAML_PATH.read_text(encoding="utf-8")
+    loader = yaml.SafeLoader(text)
     try:
-        raw = yaml.safe_load(CONTACTS_YAML_PATH.read_text(encoding="utf-8"))
-    except yaml.YAMLError as e:
-        raise RuntimeError(f"contacts.yaml 파싱 실패: {e!r}") from e
+        try:
+            root = loader.get_single_node()
+        except yaml.YAMLError as e:
+            raise RuntimeError(f"contacts.yaml 파싱 실패: {e!r}") from e
 
-    if raw is None:
-        _cached = {}
-        return _cached
+        if root is None:
+            _cached = {}
+            return _cached
 
-    if not isinstance(raw, dict):
-        raise RuntimeError("contacts.yaml 최상위가 dict 가 아닙니다.")
+        if not isinstance(root, yaml.MappingNode):
+            raise RuntimeError("contacts.yaml 최상위가 dict 가 아닙니다.")
+
+        try:
+            pairs = [
+                (
+                    loader.construct_object(k, deep=True),
+                    loader.construct_object(v, deep=True),
+                )
+                for k, v in root.value
+            ]
+        except yaml.YAMLError as e:
+            raise RuntimeError(f"contacts.yaml 파싱 실패: {e!r}") from e
+    finally:
+        loader.dispose()
 
     result: Dict[str, List[Contact]] = {}
     errors: list[str] = []
-    for name, value in raw.items():
+    for name, value in pairs:
+        name = str(name).strip()
         items = value if isinstance(value, list) else [value]
         if not items:
             errors.append(f"  - {name}: 빈 리스트(최소 1개 매핑 필요)")
@@ -94,8 +120,9 @@ def load_contacts(*, force: bool = False) -> Dict[str, List[Contact]]:
             except ValidationError as e:
                 msgs = "; ".join(err["msg"] for err in e.errors())
                 errors.append(f"  - {name}: {msgs}")
-        if contacts and len(contacts) == len(items):
-            result[str(name).strip()] = contacts
+        if len(contacts) == len(items):
+            # 같은 이름이 또 나오면(중복 키) 동명이인으로 간주해 뒤에 잇는다.
+            result.setdefault(name, []).extend(contacts)
 
     if errors:
         raise RuntimeError("contacts.yaml 스키마 검증 실패:\n" + "\n".join(errors))
