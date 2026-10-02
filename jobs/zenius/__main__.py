@@ -467,26 +467,35 @@ def parse_owner_names(owner_cell: str) -> list[str]:
     return [n.strip() for n in (owner_cell or "").split(",") if n.strip()]
 
 
-def format_contact(name: str, contacts: Dict[str, Contact]) -> str:
-    """이름을 ``팀 이름 직책`` 으로 조립한다.
+def format_contact(name: str, contacts: Dict[str, list[Contact]]) -> str:
+    """이름을 ``팀 이름 직책`` 으로 조립한다(동명이인이면 첫 번째 매핑 사용).
 
     contacts.yaml 에 없는 이름은 플레이스홀더로 표기해 사람이 수기로
     고칠 자리를 눈에 띄게 남긴다.
     """
-    c = contacts.get(name)
-    if c is not None:
+    cands = contacts.get(name)
+    if cands:
+        c = cands[0]
         return f"{c.team} {name} {c.title}"
     return f"[팀미확인] {name} [직책미확인]"
 
 
-def pick_primary_name(names: list[str], contacts: Dict[str, Contact]) -> str:
+def format_contact_line(name: str, contacts: Dict[str, list[Contact]]) -> str:
+    """기타 담당자 목록용 한 줄 — 동명이인이면 후보 전부를 ``/`` 로 잇는다."""
+    cands = contacts.get(name)
+    if not cands:
+        return f"[팀미확인] {name} [직책미확인]"
+    return " / ".join(f"{c.team} {name} {c.title}" for c in cands)
+
+
+def pick_primary_name(names: list[str], contacts: Dict[str, list[Contact]]) -> str:
     """메시지 본문에 넣을 정담당자를 고른다.
 
     팀/직책 매핑이 성공한 첫 번째 사람을 우선하고, 전원 매핑 실패면
     목록의 첫 번째 사람을 쓴다(플레이스홀더 표기).
     """
     for n in names:
-        if n in contacts:
+        if contacts.get(n):
             return n
     return names[0] if names else ""
 
@@ -503,13 +512,14 @@ def contact_method_for(severity: str) -> str:
 def build_report_message(
     event: dict,
     owner_cell: str,
-    contacts: Dict[str, Contact],
+    contacts: Dict[str, list[Contact]],
 ) -> str:
     """원본 보고서 양식을 재현하고, 담당자 팀/직책과 전파 방식을 채운다.
 
     담당자가 여러 명이면 정담당자(매핑 성공 우선) 1명을 본문에 넣고,
     나머지는 하단 ``[기타 담당자]`` 목록으로 붙여 사람이 쉽게 교체할 수
-    있게 한다.
+    있게 한다. 정담당자가 동명이인이면 본문에는 첫 번째 매핑을 쓰고
+    나머지 후보를 ``[동명이인 후보]`` 로 붙인다.
     """
     now_hm = datetime.now().strftime("%H:%M")
     method = contact_method_for(event.get("severity", ""))
@@ -532,10 +542,18 @@ def build_report_message(
         f"4. 전파내용 : {now_hm} {owner_text} 내용전파완료({method})"
     )
 
+    # 정담당자 동명이인 — 본문에 쓴 첫 매핑 외 후보를 표기(사람이 확인 후 교체).
+    if primary:
+        variants = (contacts.get(primary) or [])[1:]
+        if variants:
+            msg += "\n\n[동명이인 후보]\n" + "\n".join(
+                f"- {c.team} {primary} {c.title}" for c in variants
+            )
+
     others = [n for n in names if n != primary]
     if others:
         msg += "\n\n[기타 담당자]\n" + "\n".join(
-            f"- {format_contact(n, contacts)}" for n in others
+            f"- {format_contact_line(n, contacts)}" for n in others
         )
     return msg
 
@@ -739,7 +757,7 @@ def main() -> int:
 
     # 담당자 팀/직책 매핑 — 보조 데이터이므로 실패해도 job은 계속 돈다
     # (매핑이 비면 메시지에 플레이스홀더가 들어가 사람이 바로 알아챈다).
-    contacts: Dict[str, Contact] = {}
+    contacts: Dict[str, list[Contact]] = {}
     try:
         contacts = load_contacts()
         LOG.info("contacts.yaml 로드: %d명", len(contacts))

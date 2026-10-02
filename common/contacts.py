@@ -9,10 +9,12 @@
       플레이스홀더가 들어가므로 사람이 바로 알아챌 수 있다). 파싱/스키마
       오류는 raise 하되, 호출부(job)가 잡아서 경고 후 빈 매핑으로 계속한다.
 
-스키마::
+스키마 (동명이인은 리스트로 — 첫 항목이 우선 후보)::
 
     우상원: {team: IT개발지원팀, title: 파트장}
-    홍길동: {team: 정보보안팀, title: 책임}
+    홍길동:
+      - {team: 정보보안팀, title: 책임}
+      - {team: 네트워크팀, title: 선임}
 """
 
 from __future__ import annotations
@@ -38,17 +40,21 @@ class Contact(BaseModel):
     title: str
 
 
-_cached: Optional[Dict[str, Contact]] = None
+_cached: Optional[Dict[str, List[Contact]]] = None
 
 
-def load_contacts(*, force: bool = False) -> Dict[str, Contact]:
+def load_contacts(*, force: bool = False) -> Dict[str, List[Contact]]:
     """``config/contacts.yaml`` 을 로드+검증해 반환한다(1회 캐시).
+
+    값은 단일 매핑 또는 리스트(동명이인) 둘 다 허용하며, 항상
+    ``{이름: [Contact, ...]}`` 로 정규화해 반환한다. 리스트 순서가 우선순위다.
 
     Args:
         force: True 이면 캐시 무시하고 다시 읽는다(테스트용).
 
     Returns:
-        ``{이름: Contact}`` 매핑. 파일이 없으면 빈 dict.
+        ``{이름: [Contact, ...]}`` 매핑(각 리스트는 비어 있지 않음).
+        파일이 없으면 빈 dict.
 
     Raises:
         RuntimeError: YAML 파싱 실패, 최상위가 dict 아님, 또는 스키마 검증 실패.
@@ -74,14 +80,22 @@ def load_contacts(*, force: bool = False) -> Dict[str, Contact]:
     if not isinstance(raw, dict):
         raise RuntimeError("contacts.yaml 최상위가 dict 가 아닙니다.")
 
-    result: Dict[str, Contact] = {}
+    result: Dict[str, List[Contact]] = {}
     errors: list[str] = []
     for name, value in raw.items():
-        try:
-            result[str(name).strip()] = Contact.model_validate(value)
-        except ValidationError as e:
-            msgs = "; ".join(err["msg"] for err in e.errors())
-            errors.append(f"  - {name}: {msgs}")
+        items = value if isinstance(value, list) else [value]
+        if not items:
+            errors.append(f"  - {name}: 빈 리스트(최소 1개 매핑 필요)")
+            continue
+        contacts: List[Contact] = []
+        for item in items:
+            try:
+                contacts.append(Contact.model_validate(item))
+            except ValidationError as e:
+                msgs = "; ".join(err["msg"] for err in e.errors())
+                errors.append(f"  - {name}: {msgs}")
+        if contacts and len(contacts) == len(items):
+            result[str(name).strip()] = contacts
 
     if errors:
         raise RuntimeError("contacts.yaml 스키마 검증 실패:\n" + "\n".join(errors))
