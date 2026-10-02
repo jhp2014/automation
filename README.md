@@ -69,6 +69,23 @@ scripts\runnerctl.bat stop --timeout 90
 **스스로** 자식 정리(브라우저 등) 경로로 내려가게 한다 → 고아 프로세스 방지. 진행 중인
 job 이 끝난 뒤 종료되며, `--timeout`(기본 60s) 안에 안 내려가면 트리째 강제 종료한다.
 
+### zenius 알람 제외(뮤트) — `state\zenius_mutes.yaml`
+
+flapping(20분 주기로 꺼졌다 켜졌다 반복) 등으로 특정 호스트의 알람을 근무 중
+끄고 싶을 때 이 파일에 기입한다. 저장하면 다음 감시 주기부터 바로 반영된다.
+
+```yaml
+- host: C9300_Kyowon_Institutional_SW_A   # 이 호스트 알람 전부 제외
+- host: adwebds1kgcmm
+  title: Memory Used (%)                   # 이 호스트의 이 이벤트 제목만 제외
+```
+
+- **runner 기동 시 자동 초기화**된다(이전 파일은 `zenius_mutes_*.yaml.old` 로 보관)
+  → 이전 근무자의 뮤트가 다음 근무로 이어지지 않는다.
+- 줄을 지우면 다시 알람이 살아난다(뮤트 중 억제된 이벤트는 보고 완료 처리되지 않음).
+- 파일에 문법 오류가 있으면 **뮤트 없음으로 간주**하고 알람은 계속 나간다
+  (`logs/zenius.log` 에 경고).
+
 ### `clean` — 로그·상태 정리
 
 ```bat
@@ -111,6 +128,8 @@ runner 없이 개별 job 을 1회 돌릴 때 사용한다. 상세·인자는
 | `config/daily.yaml` | ignore | `gen-daily` 산출물(매일 갱신) |
 | `config/settings.yaml` | 추적 | 동작 토글(headless 등, 비밀값 금지) |
 | `config/jobs.yaml` | 추적 | runner 스케줄 정의 |
+| `config/contacts.yaml` | ignore | zenius 담당자 실명→팀/직책 매핑(예제만 추적) |
+| `state/zenius_mutes.yaml` | ignore | zenius 알람 제외 목록(runner 기동 시 초기화) |
 
 `*.example` 파일을 복사해 실제 파일을 만든다. 자세한 설명은
 [운영 가이드 1)](docs/06_operations.md) 참고.

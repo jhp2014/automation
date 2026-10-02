@@ -28,6 +28,7 @@ from typing import Optional
 from common import config as common_config
 from common.daily import DAILY_YAML_PATH, load_daily
 from common.logging import get_logger
+from common.mutes import MUTES_PATH, reset_mutes_file
 
 from .config import JobConfig, RunnerConfig, SUPABASE_KEY, SUPABASE_URL, load_runner_config
 from .executor import kill_all_running, run_job
@@ -204,6 +205,21 @@ def main() -> int:
     except Exception as e:
         LOG.exception("Supabase heartbeat 초기화 실패(데드맨 스위치 필수): %r", e)
         return 3
+
+    # 2.5) zenius 뮤트 파일 초기화 — 기동 = 새 근무 시작. 이전 근무자의 뮤트가
+    # 이어지지 않도록 아카이브 후 템플릿으로 교체한다. 실패해도 runner 는
+    # 계속 돌되(알람은 fail-open 으로 계속 나감) 크게 경고를 남긴다.
+    try:
+        archived = reset_mutes_file()
+        if archived is not None:
+            LOG.info("[MUTES] 이전 근무 뮤트 파일 아카이브: %s", archived)
+        LOG.info("[MUTES] 뮤트 파일 초기화 완료: %s", MUTES_PATH)
+    except Exception as e:
+        LOG.error(
+            "[MUTES] 뮤트 파일 초기화 실패 — 이전 근무 뮤트가 남아 있을 수 있음! "
+            "수동으로 %s 를 확인하세요: %r",
+            MUTES_PATH, e,
+        )
 
     # 3) 상태 로드.
     runner_state = load_runner_state()

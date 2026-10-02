@@ -41,6 +41,7 @@ from common import config
 from common.browser import save_storage_state, sync_browser
 from common.config import TelegramTarget, get_telegram_target
 from common.contacts import Contact, load_contacts
+from common.mutes import MUTES_PATH, MuteRule, find_mute, load_mutes
 from common.logging import get_logger
 from common.notify import (
     send_pushover_emergency,
@@ -742,6 +743,21 @@ def main() -> int:
     except Exception as e:
         LOG.warning("contacts.yaml 로드 실패(빈 매핑으로 진행): %r", e)
 
+    # 뮤트 목록 — fail-open: 파일 오류 시 뮤트 없음으로 진행(알람은 계속 나감).
+    mute_rules: list[MuteRule] = []
+    try:
+        mute_rules = load_mutes()
+        if mute_rules:
+            LOG.info(
+                "뮤트 규칙 %d건 로드: %s",
+                len(mute_rules),
+                ", ".join(
+                    r.host + (f"+{r.title}" if r.title else "") for r in mute_rules
+                ),
+            )
+    except Exception as e:
+        LOG.warning("뮤트 파일 로드 실패(뮤트 없음으로 진행): %s err=%r", MUTES_PATH, e)
+
     # heartbeat: 매 실행 시작에 전송 (every_run 정책).
     if target_heartbeat is not None:
         send_telegram_message(
@@ -774,12 +790,23 @@ def main() -> int:
             LOG.info("감시 대상 이벤트(치명/긴급/위험/주의/무해)+미처리 건수: %d", len(crit))
 
             stage = "filter_candidates"
-            candidates = [
-                r for r in crit
-                if r["duration_sec"] >= THRESHOLD_SEC and r["id"] not in reported
-            ]
+            candidates = []
+            muted_count = 0
+            for r in crit:
+                if r["duration_sec"] < THRESHOLD_SEC or r["id"] in reported:
+                    continue
+                rule = find_mute(mute_rules, r["host"], r["title"])
+                if rule is not None:
+                    # reported 에 넣지 않는다 — 뮤트 줄을 지우면 다시 알람이 산다.
+                    muted_count += 1
+                    LOG.info(
+                        "[MUTE] 억제: host=%s title=%s (규칙: host=%s title=%s)",
+                        r["host"], r["title"], rule.host, rule.title or "(전체)",
+                    )
+                    continue
+                candidates.append(r)
             if not candidates:
-                LOG.info("보고 대상 없음")
+                LOG.info("보고 대상 없음 (뮤트 억제 %d건)", muted_count)
                 return 0
 
             candidates.sort(key=lambda r: r["duration_sec"], reverse=True)
