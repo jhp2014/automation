@@ -14,6 +14,7 @@ scripts\runner.bat
 scripts\zenius.bat
 scripts\daily_service.bat
 scripts\whatsup.bat          # --dry-run 이면 알림/상태 저장 없이 파싱 결과만
+scripts\etl.bat              # --dry-run 판정만 / --baseline 현재 치명 행을 알림 없이 흡수
 scripts\jennifer.bat
 scripts\capture.bat
 scripts\server.bat           # 폴더 "8 전면"/"8 후면" 하드코딩 — 본 파일 편집해서 변경 가능

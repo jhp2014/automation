@@ -115,6 +115,7 @@ runner 없이 개별 job 을 1회 돌릴 때 사용한다. 상세·인자는
 | `scripts\zenius.bat` / `scripts\zenius-baseline.bat` | Zenius 수집 / baseline |
 | `scripts\daily_service.bat` | DailyService 작업 |
 | `scripts\whatsup.bat` | WhatsUp(NMS) 맵별 Items Down 점검 (`--dry-run` 이면 알림·상태 저장 생략) |
+| `scripts\etl.bat` | ETL 관제 오류테이블 치명 행 점검 (`--dry-run` 알림·상태 저장 생략, `--baseline` 현재 치명 흡수) |
 | `scripts\jennifer.bat` | Jennifer 수치 수집 |
 
 ---
