@@ -7,8 +7,8 @@
   },
   {
     "name": "Jennifer_group_site",
-    "url": "http://10.1.30.104:17900",
-    "id": "admin",
+    "url": "http://172.16.31.79:17900",
+    "id": "web_user",
     "login_type": "standard"
   },
   {
