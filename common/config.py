@@ -1,7 +1,7 @@
 """Shared configuration loaded from ``.env`` 와 ``config/daily.yaml``.
 
 세 소스의 역할 구분:
-    - ``.env`` : 거의 안 바뀌는 비밀 (Pushover/Telegram/Supabase 토큰,
+    - ``.env`` : 거의 안 바뀌는 비밀 (Pushover/Telegram/Healthchecks.io 토큰,
       Zenius·DailyService·Jennifer 자격증명 등). git ignore.
     - ``config/daily.yaml`` : 매일 갱신하는 값 (KWorks 자격증명·target_title,
       runner ``run_until``, ``jobs.server`` 의 ``times``). git ignore — 비밀값

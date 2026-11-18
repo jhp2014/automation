@@ -88,7 +88,7 @@
 - `config/jobs.yaml` (구조) + `config/daily.yaml` (매일 갱신값) 두 파일을 읽어 pydantic 으로 검증.
 - 각 job 을 `[sys.executable, "-m", <module>, *args]` 로 subprocess 호출 (인터프리터 통일 조항).
 - 3개 스케줄 모드: `interval` / `hourly_jitter` / `one_time_list`.
-- Supabase 에 데드맨 스위치 heartbeat (3회 연속 실패 시 Pushover 경고 1회).
+- Healthchecks.io 에 데드맨 스위치 heartbeat ping (runner down 은 Healthchecks.io → Pushover, ping 3회 연속 실패 시 runner 가 Pushover 경고 1회).
 - 상태는 두 파일로 분리: `state/runner.json` (running_pid, last_heartbeat_at) + `state/scheduler.json` (last_run, hourly_plan, one_time_done).
 - 자세한 내부 구조는 [07. runner](07_runner.md) 참고.
 

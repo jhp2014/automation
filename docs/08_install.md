@@ -53,10 +53,9 @@ python -m pip install -e .
 |--------|------|
 | `playwright` | 모든 브라우저 job (zenius, daily_service, jennifer, server, capture) |
 | `python-dotenv` | `.env` 로딩 (`common.config`) |
-| `requests` | Pushover/Telegram HTTP (`common.notify`) |
+| `requests` | Pushover/Telegram HTTP (`common.notify`), runner heartbeat ping (Healthchecks.io) |
 | `pydantic>=2` | `jobs.yaml`, `daily.yaml`, `jennifer_sites.json` 스키마 검증 |
 | `pyyaml` | YAML 파싱 |
-| `supabase` | runner 데드맨 스위치 heartbeat |
 | `mss` | capture: 좌측 모니터 스크린샷 (Windows + Linux + Mac) |
 | `Pillow` | capture: 이미지 처리 + dHash 비교 |
 | `pywin32` | capture: 윈도우 열거 / 가림 검사 (Windows 전용) |
@@ -106,7 +105,14 @@ notepad .env
 - `ZENIUS_USER_ID`, `ZENIUS_USER_PW`
 - `DAILYSERVICE_USER_ID`, `DAILYSERVICE_USER_PW`
 - `JENNIFER_PW__JENNIFER_CLOUD`, `JENNIFER_PW__JENNIFER_GROUP_SITE`, `JENNIFER_PW__JENNIFER_LMS`, `JENNIFER_PW__JENNIFER_REDPEN`
-- `SUPABASE_URL`, `SUPABASE_KEY` ← **runner 가 비어 있으면 시작 자체를 거부** (데드맨 스위치 약화 금지 조항)
+- `HEALTHCHECK_PING_URL` ← **runner 가 비어 있으면 시작 자체를 거부** (데드맨 스위치 약화 금지 조항)
+- `HEALTHCHECK_API_KEY` ← 계획된 종료(run_until / stop.flag / Ctrl+C) 때 체크 pause 용. 비우면 정상 종료 때도 down 알람이 간다
+
+Healthchecks.io 체크 설정 (최초 1회, healthchecks.io 웹에서):
+- Slug 는 **비워둔다** (ping URL 이 `https://hc-ping.com/<uuid>` 형식이어야 pause 가 동작).
+- Period **1분** (`heartbeat_interval_sec: 60` 과 동일), Grace **2분** → 마지막 ping 후 약 3분이면 down 알람.
+  runner 는 job 실행 중에도 대기 루프에서 heartbeat 를 보내므로 job 소요 시간과 무관하다.
+- Integrations 에서 Pushover 연결 후 이 체크에 켠다.
 
 ### 5-B) `config/daily.yaml` (매일 갱신)
 
@@ -161,8 +167,8 @@ notepad config\daily.yaml
 .\scripts\runner.bat
 ```
 - 시작 시 `==== [RUNNER START] ====`, jobs 로딩, 1회 heartbeat 송신 로그 확인
-- Supabase 콘솔에서 `runner_heartbeat.last_seen_at` 갱신 확인
-- `Ctrl+C` 로 종료, `==== [RUNNER END] ====` 확인
+- `[HEARTBEAT] ping to Healthchecks OK` 로그 + healthchecks.io 대시보드에서 체크가 up 인지 확인
+- `Ctrl+C` 로 종료, `Healthchecks 체크 pause 완료` 와 `==== [RUNNER END] ====` 확인 (대시보드에서 paused)
 
 ## 8) bat 단축 (위치 무관)
 
@@ -192,10 +198,10 @@ Please create .venv and install deps. See docs/08_install.md.
 |------|------|
 | bat 더블클릭 시 즉시 "Python not found" | 2~4단계 .venv + deps 설치 |
 | `BrowserType.launch: Executable doesn't exist` | 4단계 `playwright install chromium` |
-| `Supabase 자격증명 누락` 으로 runner 즉시 종료 | 5-A) `SUPABASE_URL` / `SUPABASE_KEY` |
+| `HEALTHCHECK_PING_URL 이 .env 에 비어 있습니다` 로 runner 즉시 종료 | 5-A) `HEALTHCHECK_PING_URL` |
 | `daily.yaml 의 kworks.user_id 가 비어 있습니다` | 5-B) `config/daily.yaml` 의 kworks 채우기 |
 | `--target-title 도 daily.yaml ... 도 비어 있습니다` | 5-B) `kworks.target_title` 또는 CLI `--target-title` |
 | jennifer 팝업 미발생 | `logs/jennifer.log` 의 `캔버스 box: width=... height=...` 로 캔버스 크기 확인. 0 이면 차트 렌더 실패 |
-| heartbeat 3회 연속 실패 Pushover | SUPABASE_KEY 만료 / 네트워크 차단 / 테이블 권한 확인 |
+| heartbeat 3회 연속 실패 Pushover | ping URL 오타 / 사내 방화벽·프록시가 `hc-ping.com` 차단 |
 
 자세한 운영 가이드: [06. 운영](06_operations.md). runner 내부: [07. runner](07_runner.md).

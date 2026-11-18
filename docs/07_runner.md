@@ -7,11 +7,11 @@
 ```
 runner/
 ├── __main__.py    메인 루프 — 부품 조립만 한다 (얇게)
-├── config.py      jobs.yaml 로딩 + pydantic 스키마 검증, SUPABASE_URL/KEY (.env)
+├── config.py      jobs.yaml 로딩 + pydantic 스키마 검증, HEALTHCHECK_PING_URL/API_KEY (.env)
 ├── state.py       runner.json + scheduler.json 두 상태 파일 관리
 ├── scheduler.py   interval / hourly_jitter / one_time_list 3개 모드 판정
 ├── executor.py    sys.executable -m <module> subprocess 실행 (블로킹)
-└── heartbeat.py   데드맨 스위치 (Supabase upsert + 연속 실패 임계 경고)
+└── heartbeat.py   데드맨 스위치 (Healthchecks.io ping + 연속 실패 임계 경고)
 ```
 
 규칙: `__main__.py` 는 로직을 보유하지 않는다 — 다른 모듈들의 함수를 순서대로 호출만 한다.
@@ -58,7 +58,7 @@ cmd = [sys.executable, "-m", job.module, *job.args, *(entry.args if entry else [
 ```
 
 - `running_pid`: 현재 실행 중인 자식의 PID. `run_job` 시작 시 추가, 종료 시 제거.
-- `last_heartbeat_at`: 마지막 Supabase 송신 시각 (ISO 로컬). `should_send` 비교에 사용.
+- `last_heartbeat_at`: 마지막 heartbeat ping 성공 시각 (ISO 로컬). `should_send` 비교에 사용.
 - `cleanup_dead_pids()` 가 죽은 PID 를 제거한다 (`os.kill(pid, 0)` 로 생존 확인).
 
 ### `state/scheduler.json` — 스케줄 소유
@@ -130,15 +130,17 @@ state_key 는 `{job_name}|{at}|{args 를 '||' 로 join}`. 같은 시각·다른 
 
 `_safe_decode(bytes) → str`: cp949 → utf-8 → utf-8 replace 순. Windows 콘솔이 cp949 인 경우가 흔하므로 우선 시도하고, 다른 인코딩으로 섞여 나오는 출력에서도 깨지지 않게 보호한다 (원본 `safe_decode` 계승).
 
-## 데드맨 스위치 (Supabase heartbeat) — 약화 금지
+## 데드맨 스위치 (Healthchecks.io heartbeat) — 약화 금지
 
 `heartbeat.HeartbeatSender` 의 의미:
 
-- `runner_heartbeat` 테이블에 `{source, last_seen_at}` 을 `interval_sec` 마다 upsert.
-- runner 가 멈추면 `last_seen_at` 이 갱신되지 않는다 → 외부 감시 시스템이 이를 보고 경보를 띄울 수 있다.
+- `HEALTHCHECK_PING_URL` 에 `interval_sec` 마다 GET 1회 (timeout 10s).
+- runner 가 멈추면 ping 이 끊긴다 → Healthchecks.io 가 period + grace 경과 후 연동된 Pushover 로 down 알람.
+- 계획된 종료(run_until / stop.flag / KeyboardInterrupt)에서만 `pause()` 로 체크를 일시정지해 오알람을 막는다. 다음 ping(재기동)에서 자동 재개. 예상 못한 예외로 루프가 빠지면 pause 하지 않는다.
+- job 은 블로킹으로 실행되지만, `run_job` 의 대기 폴링(0.5초)마다 `on_wait` 콜백으로 heartbeat 주기를 확인해 ping 을 보낸다. 따라서 ping 간격은 job 소요 시간과 무관하고 체크의 Grace 를 짧게 둘 수 있다(권장 Period 1분 + Grace 2분).
 - 본 클래스의 메서드는 **runner 본 루프를 죽이지 않는다** — 모든 송신 실패는 내부에서 흡수하고 로그 + 카운터로만 처리.
 - 그러나 **연속 실패가 `MAX_CONSECUTIVE_FAILURES = 3` 에 도달하면 Pushover 로 1회 경고**. 같은 실패 스트릭 동안 추가 경고는 보내지 않으며, 송신이 한 번이라도 성공하면 카운터·플래그가 reset 된다.
-- 운영자는 외부 감시 (예: Supabase 의 `last_seen_at` 가 일정 시간 이상 갱신 안 되면 알람을 띄우는 별도 워치독) 와 함께 운용해야 데드맨 스위치가 의도대로 작동한다.
+- 외부 감시는 Healthchecks.io 체크 자체다. 체크의 Pushover 연동이 꺼져 있으면 데드맨 스위치가 작동하지 않는다.
 
 코드 안에 "약화 금지" 메모와 함께 임계값 상수를 노출한 것은 이 정책이 사람의 판단 없이 바뀌지 않게 하기 위함이다.
 
@@ -147,7 +149,7 @@ state_key 는 `{job_name}|{at}|{args 를 '||' 로 join}`. 같은 시각·다른 
 ```
 ensure_dirs
 load_runner_config        ← 실패 시 즉시 종료(2)
-HeartbeatSender 생성       ← URL/KEY 누락 시 즉시 종료(3) — 약화 금지
+HeartbeatSender 생성       ← PING_URL 누락 시 즉시 종료(3) — 약화 금지
 load_runner_state, load_scheduler_state
 1회 heartbeat 시도
 
@@ -162,7 +164,7 @@ while True:
     sleep(tick_sec)
 
 KeyboardInterrupt → kill_all_running
-finally → [RUNNER END] 로그
+finally → (계획된 종료면) hb.pause → [RUNNER END] 로그
 ```
 
 ## 확장 메모 (현재 미구현)

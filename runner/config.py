@@ -1,6 +1,6 @@
 """runner 설정 로더: ``config/jobs.yaml`` 을 pydantic 으로 검증해 반환.
 
-규약 v1.1 따름. 비밀값(SUPABASE_URL/KEY)은 ``.env`` 에서 읽는다 — YAML 에
+규약 v1.1 따름. 비밀값(HEALTHCHECK_PING_URL/API_KEY)은 ``.env`` 에서 읽는다 — YAML 에
 박지 않는다.
 
 스키마 핵심:
@@ -27,11 +27,11 @@ from common.daily import load_daily
 
 
 # ---------------------------------------------------------------------------
-# Supabase 자격증명 (runner heartbeat 전용, .env 에서만)
+# Healthchecks.io (runner heartbeat 전용, .env 에서만)
 # ---------------------------------------------------------------------------
 
-SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+HEALTHCHECK_PING_URL: str = os.getenv("HEALTHCHECK_PING_URL", "")
+HEALTHCHECK_API_KEY: str = os.getenv("HEALTHCHECK_API_KEY", "")
 
 
 # ---------------------------------------------------------------------------

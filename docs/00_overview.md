@@ -39,7 +39,7 @@ automation/
 │   ├── state.py                    # runner.json + scheduler.json 분리 관리
 │   ├── scheduler.py                # interval / hourly_jitter / one_time_list 판정
 │   ├── executor.py                 # sys.executable -m subprocess
-│   └── heartbeat.py                # Supabase 데드맨 스위치
+│   └── heartbeat.py                # Healthchecks.io 데드맨 스위치
 ├── config/                         # 구조 + 매일 갱신값
 │   ├── jobs.yaml                   # 구조 (모드/모듈/주기/timeout). 거의 안 바뀜
 │   ├── daily.yaml                  # 매일 갱신 (run_until, KWorks 자격증명, server times). git ignore
@@ -61,7 +61,7 @@ automation/
 
 | 파일 | 빈도 | 들어갈 값 |
 |------|------|----------|
-| `.env` | 거의 안 바뀜 | Pushover/Telegram/Supabase 토큰, Zenius·DailyService·Jennifer 자격증명 |
+| `.env` | 거의 안 바뀜 | Pushover/Telegram/Healthchecks.io 토큰, Zenius·DailyService·Jennifer 자격증명 |
 | `config/daily.yaml` | 매일 갱신 | `run_until`, KWorks 자격증명·target_title, `jobs.server.times` |
 
 ## 데이터 흐름
@@ -71,7 +71,7 @@ automation/
 │ runner (python -m runner)                                          │
 │  - config/jobs.yaml + config/daily.yaml 로드 + pydantic 검증       │
 │  - state/runner.json + state/scheduler.json 관리                   │
-│  - Supabase 데드맨 스위치 (heartbeat upsert + 3회 실패 → Pushover) │
+│  - Healthchecks.io 데드맨 스위치 (ping + 3회 실패 → Pushover)     │
 └─────────────────┬─────────────────────────────────────────────────┘
                   │ subprocess: [sys.executable, "-m", <module>, *args]
                   ▼

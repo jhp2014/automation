@@ -1,11 +1,11 @@
 """runner 진입점. ``python -m runner`` 로 기동.
 
 규약 v1.1 따름. 본 모듈은 메인 루프만 담당하고 부품 책임은 다음에 위임한다:
-    - runner.config     : jobs.yaml 로딩 + 스키마 검증, Supabase 자격증명
+    - runner.config     : jobs.yaml 로딩 + 스키마 검증, Healthchecks.io 설정
     - runner.state      : runner.json + scheduler.json 두 상태 파일 관리
     - runner.scheduler  : 3개 모드의 스케줄 판정
     - runner.executor   : sys.executable -m <module> subprocess 실행
-    - runner.heartbeat  : 데드맨 스위치 (Supabase upsert + 연속 실패 경고)
+    - runner.heartbeat  : 데드맨 스위치 (Healthchecks.io ping + 연속 실패 경고)
 """
 
 from __future__ import annotations
@@ -30,7 +30,13 @@ from common.daily import DAILY_YAML_PATH, load_daily
 from common.logging import get_logger
 from common.mutes import MUTES_PATH, reset_mutes_file
 
-from .config import JobConfig, RunnerConfig, SUPABASE_KEY, SUPABASE_URL, load_runner_config
+from .config import (
+    HEALTHCHECK_API_KEY,
+    HEALTHCHECK_PING_URL,
+    JobConfig,
+    RunnerConfig,
+    load_runner_config,
+)
 from .executor import kill_all_running, run_job
 from .heartbeat import HeartbeatSender
 from .scheduler import (
@@ -194,16 +200,15 @@ def main() -> int:
         cfg.run_until or "(무기한)",
     )
 
-    # 2) heartbeat 클라이언트 (Supabase 키 누락도 즉시 실패: 데드맨 스위치 약화 금지).
+    # 2) heartbeat 송신기 (ping URL 누락도 즉시 실패: 데드맨 스위치 약화 금지).
     try:
         hb = HeartbeatSender(
-            url=SUPABASE_URL,
-            key=SUPABASE_KEY,
-            source=cfg.heartbeat_source,
+            ping_url=HEALTHCHECK_PING_URL,
+            api_key=HEALTHCHECK_API_KEY,
             interval_sec=cfg.heartbeat_interval_sec,
         )
     except Exception as e:
-        LOG.exception("Supabase heartbeat 초기화 실패(데드맨 스위치 필수): %r", e)
+        LOG.exception("heartbeat 초기화 실패(데드맨 스위치 필수): %r", e)
         return 3
 
     # 2.5) zenius 뮤트 파일 초기화 — 기동 = 새 근무 시작. 이전 근무자의 뮤트가
@@ -241,9 +246,13 @@ def main() -> int:
     # 시작 직후 1회 heartbeat 시도.
     _try_send_heartbeat(hb, runner_state)
 
+    # 계획된 종료 사유. 설정된 경우에만 종료 시 Healthchecks 체크를 pause 한다.
+    # 크래시(예상 못한 예외)로 빠지면 None 으로 남아 pause 없이 down 알람이 간다.
+    planned_stop: Optional[str] = None
+
     try:
         while True:
-            # 0) tick 시각 기록(매 tick, Supabase 무관). status 조회·신선도 보조.
+            # 0) tick 시각 기록(매 tick, heartbeat 무관). status 조회·신선도 보조.
             runner_state["last_tick_at"] = datetime.now().isoformat()
 
             # 1) 자동 종료 — 시각 도달 또는 외부 stop.flag 요청.
@@ -251,11 +260,13 @@ def main() -> int:
                 LOG.info("[RUNLIMIT] 종료 시각 도달 -> 자식 정리 후 종료")
                 kill_all_running(runner_state)
                 save_runner_state(runner_state)
+                planned_stop = "run_until"
                 break
             if stop_requested():
                 LOG.info("[STOP] stop.flag 감지 -> 자식 정리 후 종료")
                 kill_all_running(runner_state)
                 save_runner_state(runner_state)
+                planned_stop = "stop.flag"
                 break
 
             # 2) 죽은 PID 정리.
@@ -294,7 +305,14 @@ def main() -> int:
                 # 실제 실행 — 블로킹.
                 # 실행 직전에 runner_state 저장 안 해도 무방(running_pid 는
                 # run_job 안에서 in-place 갱신·종료 시 제거).
-                run_job(job, runner_state, schedule_entry=schedule_entry)
+                # on_wait: job 실행 중에도 heartbeat 를 보내, ping 간격이 job 소요
+                # 시간에 묶이지 않게 한다(Healthchecks grace 를 짧게 둘 수 있음).
+                run_job(
+                    job,
+                    runner_state,
+                    schedule_entry=schedule_entry,
+                    on_wait=lambda: _try_send_heartbeat(hb, runner_state),
+                )
 
                 # last_run 갱신 + one_time done 처리.
                 update_last_run(scheduler_state, job.name)
@@ -309,7 +327,10 @@ def main() -> int:
         LOG.info("[USER] KeyboardInterrupt -> 자식 정리")
         kill_all_running(runner_state)
         save_runner_state(runner_state)
+        planned_stop = "KeyboardInterrupt"
     finally:
+        if planned_stop is not None:
+            hb.pause(planned_stop)
         # 종료 표식: runner_pid 비우고 stop.flag 정리 → 외부에서 '정지' 로 본다.
         runner_state["runner_pid"] = None
         save_runner_state(runner_state)

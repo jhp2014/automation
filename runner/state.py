@@ -47,7 +47,7 @@ def _default_runner_state() -> Dict[str, Any]:
         "running_pid": {},        # {"job_name": pid_int}
         "last_heartbeat_at": None,  # ISO 문자열(local time) 또는 None
         "runner_pid": None,       # runner 본체 PID. 살아있으면 실행 중(정확).
-        "last_tick_at": None,     # 매 tick 갱신(Supabase 와 무관). 신선도 보조 지표.
+        "last_tick_at": None,     # 매 tick 갱신(heartbeat 와 무관). 신선도 보조 지표.
     }
 
 

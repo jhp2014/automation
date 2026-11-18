@@ -55,7 +55,7 @@ automation/
 
 | 파일 | 빈도 | 용도 |
 |------|------|------|
-| `.env` | 거의 안 바뀜 | 정적 비밀(Pushover/Telegram/Supabase 토큰, Zenius·DailyService·Jennifer 자격증명) |
+| `.env` | 거의 안 바뀜 | 정적 비밀(Pushover/Telegram/Healthchecks.io 토큰, Zenius·DailyService·Jennifer 자격증명) |
 | `config/daily.yaml` | 매일 갱신 | run_until, KWorks 자격증명·target_title, `jobs.server.times` |
 
 `.env.example` / `config/daily.yaml.example` 에는 키 이름과 구조만 두고 값은 비운다. `common/config.py` 가 양쪽을 로드해 모듈 상수로 노출한다 (`common/daily.py` 가 daily.yaml 의 로더).

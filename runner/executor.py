@@ -14,7 +14,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import IO, Any, Dict, List, Optional
+from typing import IO, Any, Callable, Dict, List, Optional
 
 from common import config as common_config
 from common.logging import get_logger
@@ -95,6 +95,7 @@ def run_job(
     job: JobConfig,
     runner_state: Dict[str, Any],
     schedule_entry: Optional[OneTimeEntry] = None,
+    on_wait: Optional[Callable[[], None]] = None,
 ) -> int:
     """job 을 subprocess 로 실행하고 종료까지 대기한다.
 
@@ -102,6 +103,8 @@ def run_job(
         job: 실행할 JobConfig.
         runner_state: ``running_pid`` 를 in-place 로 업데이트할 runner 상태.
         schedule_entry: one_time entry 인 경우 그 entry. 그 외에는 None.
+        on_wait: 자식 대기 폴링마다(0.5초) 호출되는 콜백. runner 가 heartbeat
+            를 job 실행 중에도 보내는 데 쓴다. 예외는 흡수한다.
 
     Returns:
         자식의 returncode. timeout 으로 강제 종료된 경우는 음수가 될 수 있다.
@@ -152,6 +155,13 @@ def run_job(
             ret = p.poll()
             if ret is not None:
                 break
+
+            # job 이 길어져도 runner 생존 신호(heartbeat)는 계속 나가게 한다.
+            if on_wait is not None:
+                try:
+                    on_wait()
+                except Exception as e:
+                    _log.warning("[%s] on_wait 콜백 예외(무시): %r", name, e)
 
             time.sleep(0.5)
 

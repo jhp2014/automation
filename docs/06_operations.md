@@ -44,7 +44,7 @@ cd C:\Users\whdgn\Dev\kwop\automation
 
 | 파일 | git | 빈도 | 들어갈 값 |
 |------|-----|------|----------|
-| `.env` | ignore | 거의 안 바뀜 | Pushover, Telegram, Supabase, 그 외 사이트별(Zenius/DailyService/Jennifer) 자격증명 |
+| `.env` | ignore | 거의 안 바뀜 | Pushover, Telegram, Healthchecks.io, 그 외 사이트별(Zenius/DailyService/Jennifer) 자격증명 |
 | `config/daily.yaml` | ignore | 매일 갱신 | `run_until`, KWorks 자격증명/제목, `jobs.server` 의 `times` |
 | `config/settings.yaml` | **추적** (비밀 아님) | 거의 안 바뀜 | job 별 `headless`, `submit_by_enter`, capture 대상 같은 동작 토글 |
 
@@ -76,9 +76,9 @@ JENNIFER_PW__JENNIFER_GROUP_SITE=
 JENNIFER_PW__JENNIFER_LMS=
 JENNIFER_PW__JENNIFER_REDPEN=
 
-# Supabase (runner 데드맨 스위치 — 비우면 runner 가 기동되지 않는다)
-SUPABASE_URL=
-SUPABASE_KEY=
+# Healthchecks.io (runner 데드맨 스위치 — PING_URL 비우면 runner 가 기동되지 않는다)
+HEALTHCHECK_PING_URL=
+HEALTHCHECK_API_KEY=
 ```
 
 ### 1-B) `config/daily.yaml` (매일 갱신)
@@ -275,10 +275,10 @@ scripts\clean.bat --dry-run
 
 ### "runner alive but heartbeat failing" Pushover 가 왔을 때
 
-- `runner` 자체는 멀쩡한데 Supabase 송신만 실패하는 상태.
+- `runner` 자체는 멀쩡한데 Healthchecks.io ping 만 실패하는 상태.
 - 확인 순서:
-  1. `SUPABASE_URL` / `SUPABASE_KEY` 가 만료되거나 잘못 갱신되지 않았는지 (`.env`).
-  2. 호스트의 외부 통신이 막혔는지 (`curl https://<your-project>.supabase.co/rest/v1/`).
+  1. `HEALTHCHECK_PING_URL` 이 맞는지 (`.env`, healthchecks.io 체크 화면의 URL 과 비교).
+  2. 호스트의 외부 통신이 막혔는지 (`curl https://hc-ping.com/<uuid>` → `OK`).
   3. `logs/runner.log` 의 `[HEARTBEAT] 송신 실패 #N` 로그에서 마지막 에러 객체 확인.
 - 임계(3회 연속)에 도달했을 때 1회만 보낸다. 복구되면 카운터·경고 플래그가 reset.
 
@@ -311,7 +311,7 @@ job 자체에 문제가 의심되면 runner 를 멈추고 해당 job 만 헤드�
 
 매일:
 - runner 로그에서 `[FAIL]` 또는 `STDERR` 블록 검색.
-- Supabase 콘솔에서 `runner_heartbeat.last_seen_at` 최근 갱신 확인 (외부 데드맨 감시 별도 권장).
+- healthchecks.io 대시보드에서 runner 체크가 up 인지 확인 (down 이면 Pushover 알람이 이미 갔어야 함).
 
 주기적으로:
 - `jobs.yaml` 의 `target_title` 같은 매일 바뀌는 값 업데이트 누락 확인.

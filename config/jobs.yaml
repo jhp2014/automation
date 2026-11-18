@@ -1,7 +1,7 @@
 # =============================================================================
 # config/jobs.yaml — runner 일정 정의 (규약 v1.1)
 #
-# 비밀값(토큰·비밀번호·SUPABASE_KEY 등) 절대 금지. 비밀값은 모두 .env 또는
+# 비밀값(토큰·비밀번호·HEALTHCHECK_API_KEY 등) 절대 금지. 비밀값은 모두 .env 또는
 # config/daily.yaml (둘 다 git ignore).
 #
 # 각 job 은 python -m <module> <args...> 형태로 호출된다.
