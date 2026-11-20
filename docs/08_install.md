@@ -104,6 +104,7 @@ notepad .env
 - `TELEGRAM_BOT__DAILYSERVICE`, `TELEGRAM_CHAT__DAILYSERVICE__HEARTBEAT`
 - `ZENIUS_USER_ID`, `ZENIUS_USER_PW`
 - `DAILYSERVICE_USER_ID`, `DAILYSERVICE_USER_PW`
+- `JENNIFER_ID__JENNIFER_CLOUD`, `JENNIFER_ID__JENNIFER_GROUP_SITE`, `JENNIFER_ID__JENNIFER_LMS`, `JENNIFER_ID__JENNIFER_REDPEN`
 - `JENNIFER_PW__JENNIFER_CLOUD`, `JENNIFER_PW__JENNIFER_GROUP_SITE`, `JENNIFER_PW__JENNIFER_LMS`, `JENNIFER_PW__JENNIFER_REDPEN`
 - `HEALTHCHECK_PING_URL` ← **runner 가 비어 있으면 시작 자체를 거부** (데드맨 스위치 약화 금지 조항)
 
@@ -126,9 +127,9 @@ notepad config\daily.yaml
 
 ## 6) Jennifer 사이트 목록 확인
 
-`config/jennifer_sites.json` 은 git 추적. 사이트 추가/수정 시 본 파일을 편집하고 비밀번호는 `.env` 의 `JENNIFER_PW__<NAME_UPPER>` 키에 추가.
+`config/jennifer_sites.json` 은 git 추적. 사이트 추가/수정 시 본 파일을 편집하고 로그인 id/비밀번호는 `.env` 의 `JENNIFER_ID__<NAME_UPPER>` / `JENNIFER_PW__<NAME_UPPER>` 키에 추가. json 에 `id`/`pw` 를 넣으면 로딩 단계에서 에러로 거부한다.
 
-각 항목 키: 필수 `{name, url, id, login_type}`, 선택 `ignore_https_errors`(bool, 기본 false). HTTPS 인증서 오류가 나는 사이트(예: Redpen)는 `"ignore_https_errors": true` 를 추가하면 인증서 검증을 건너뛰고 접속한다.
+각 항목 키: 필수 `{name, url, login_type}`, 선택 `ignore_https_errors`(bool, 기본 false). HTTPS 인증서 오류가 나는 사이트(예: Redpen)는 `"ignore_https_errors": true` 를 추가하면 인증서 검증을 건너뛰고 접속한다.
 
 ## 7) 첫 동작 검증
 

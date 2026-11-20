@@ -2,26 +2,22 @@
   {
     "name": "Jennifer_cloud",
     "url": "http://10.1.30.104:7910",
-    "id": "admin",
     "login_type": "standard"
   },
   {
     "name": "Jennifer_group_site",
     "url": "http://172.16.31.79:17900",
-    "id": "web_user",
     "login_type": "standard"
   },
   {
     "name": "Jennifer_lms",
     "url": "http://172.16.31.79:7900",
-    "id": "admin",
     "login_type": "standard"
   },
   {
     "name": "Jennifer_redpen",
     "url": "https://apm.redpenai.com/dashboard/realtimeAdmin",
     "login_url": "https://apm.redpenai.com/login",
-    "id": "admin",
     "login_type": "new",
     "ignore_https_errors": true
   }

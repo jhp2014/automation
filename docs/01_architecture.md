@@ -96,7 +96,7 @@
 - `jobs.yaml` — runner 일정 **구조** (모드/모듈/주기/timeout). 거의 안 바뀜. git 추적.
 - `daily.yaml` — 매일 갱신값 (run_until, KWorks 자격증명·target_title, server.times). git ignore. `.env` 와 동격이라 비밀값 OK.
 - `settings.yaml` — 동작 토글 (job 별 headless / submit_by_enter). git 추적, 비밀 금지. 폴백 없음(부재/스키마 위반 시 에러).
-- `jennifer_sites.json` — Jennifer 사이트 목록 (id 까지만, pw 는 .env).
+- `jennifer_sites.json` — Jennifer 사이트 목록 (자격증명 없음, id/pw 는 .env).
 
 ## 새 job 의 정형 흐름
 

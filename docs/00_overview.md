@@ -45,7 +45,7 @@ automation/
 │   ├── daily.yaml                  # 매일 갱신 (run_until, KWorks 자격증명, server times). git ignore
 │   ├── daily.yaml.example          # daily.yaml 템플릿
 │   ├── settings.yaml               # 동작 토글 (headless/submit_by_enter). git 추적, 비밀 금지
-│   └── jennifer_sites.json         # Jennifer 사이트 목록 (id 까지만, pw 는 .env)
+│   └── jennifer_sites.json         # Jennifer 사이트 목록 (id/pw 는 .env)
 ├── scripts/                        # Windows bat 단축실행
 │   ├── runner.bat
 │   ├── <job>.bat                   # 개별 job (디버그용 --no-headless 박음)

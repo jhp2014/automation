@@ -4,9 +4,10 @@ jennifer 점검 job(``jobs.jennifer``)과 대시보드 스냅샷(``tools.jennife
 이 같은 로그인 흐름을 쓰도록 ``jobs/jennifer/__main__.py`` 에서 분리했다.
 동작은 분리 전과 동일하다.
 
-사이트 목록: config/jennifer_sites.json (id 까지만 평문, pw 는 .env).
-비밀번호 env 키 규칙: ``JENNIFER_PW__<NAME_UPPER>`` — 사이트명 공백/하이픈을
-언더스코어로 치환 후 대문자화. 예: ``Jennifer_cloud`` → ``JENNIFER_PW__JENNIFER_CLOUD``.
+사이트 목록: config/jennifer_sites.json (name/url/login_type 등, 자격증명 없음).
+자격증명은 .env 에서 읽는다. env 키 규칙: ``JENNIFER_ID__<NAME_UPPER>`` /
+``JENNIFER_PW__<NAME_UPPER>`` — 사이트명 공백/하이픈을 언더스코어로 치환 후
+대문자화. 예: ``Jennifer_cloud`` → ``JENNIFER_ID__JENNIFER_CLOUD``.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ REDPEN_REDIRECT_CHECK_MS = 3000
 # 페이지 진입(goto) 타임아웃(원본 60초).
 GOTO_TIMEOUT_MS = 60000
 
-# 사이트 설정 파일(비밀번호 제외).
+# 사이트 설정 파일(자격증명 제외).
 SITES_CONFIG_PATH = config.BASE_DIR / "config" / "jennifer_sites.json"
 
 # 세션 저장 폴더(원본의 sessions/ 와 동등, 규약 9에 따라 STATE_DIR 하위로).
@@ -61,14 +62,16 @@ def load_sites() -> List[Dict[str, str]]:
     """``config/jennifer_sites.json`` 에서 사이트 목록을 읽는다.
 
     Returns:
-        각 항목은 ``{name, url, id, login_type}`` 키를 가진 dict 리스트.
+        각 항목은 ``{name, url, login_type}`` 키를 가진 dict 리스트.
+        로그인 id/pw 는 여기 두지 않고 .env 에서 읽는다.
         선택 키 ``ignore_https_errors`` (bool) 가 있으면 해당 사이트는 HTTPS
         인증서 오류를 무시하고 접속한다(기본 False).
 
     Raises:
         FileNotFoundError: 설정 파일이 없는 경우.
-        ValueError: 파일이 JSON 배열이 아니거나 필수 키가 빠진 경우, 또는
-            ``ignore_https_errors`` 가 bool 이 아닌 경우.
+        ValueError: 파일이 JSON 배열이 아니거나 필수 키가 빠진 경우,
+            ``ignore_https_errors`` 가 bool 이 아닌 경우, 또는 자격증명 키
+            (``id``/``pw``)가 들어 있는 경우(.env 로 옮겨야 함).
     """
     if not SITES_CONFIG_PATH.exists():
         raise FileNotFoundError(f"사이트 설정 없음: {SITES_CONFIG_PATH}")
@@ -79,13 +82,20 @@ def load_sites() -> List[Dict[str, str]]:
             f"사이트 설정은 JSON 배열이어야 합니다: {SITES_CONFIG_PATH}"
         )
 
-    required = {"name", "url", "id", "login_type"}
+    required = {"name", "url", "login_type"}
     for i, site in enumerate(data):
         if not isinstance(site, dict):
             raise ValueError(f"사이트[{i}] 형식 오류: dict 아님")
         missing = required - set(site.keys())
         if missing:
             raise ValueError(f"사이트[{i}] 키 누락: {missing}")
+        leaked = {"id", "pw"} & set(site.keys())
+        if leaked:
+            raise ValueError(
+                f"사이트[{i}] 자격증명 키 {leaked} 는 json 에 두지 않습니다 — "
+                f".env 의 {_env_key('ID', site['name'])} / "
+                f"{_env_key('PW', site['name'])} 로 옮기세요."
+            )
         if site["login_type"] not in ("standard", "new"):
             raise ValueError(
                 f"사이트[{i}] login_type 은 'standard' 또는 'new' 만 허용: "
@@ -101,33 +111,39 @@ def load_sites() -> List[Dict[str, str]]:
     return data
 
 
-def _env_key_for_password(site_name: str) -> str:
-    """사이트명에서 비밀번호 env 키를 만든다.
+def _env_key(kind: str, site_name: str) -> str:
+    """사이트명에서 자격증명 env 키를 만든다.
 
     규칙: 공백·하이픈을 언더스코어로 치환한 뒤 대문자화하여
-    ``JENNIFER_PW__<NAME_UPPER>`` 로 합성한다.
+    ``JENNIFER_<KIND>__<NAME_UPPER>`` 로 합성한다.
 
     Args:
+        kind: ``"ID"`` 또는 ``"PW"``.
         site_name: 사이트명(예: ``"Jennifer_cloud"``).
 
     Returns:
-        예: ``"JENNIFER_PW__JENNIFER_CLOUD"``.
+        예: ``"JENNIFER_ID__JENNIFER_CLOUD"``.
     """
     norm = re.sub(r"[\s\-]+", "_", site_name).upper()
-    return f"JENNIFER_PW__{norm}"
+    return f"JENNIFER_{kind}__{norm}"
 
 
-def _read_password(site_name: str) -> str:
-    """사이트별 비밀번호를 환경변수에서 읽는다.
+def _read_credential(kind: str, site_name: str) -> str:
+    """사이트별 로그인 id 또는 비밀번호를 환경변수에서 읽는다.
+
+    Args:
+        kind: ``"ID"`` 또는 ``"PW"``.
+        site_name: 사이트명.
 
     Raises:
         RuntimeError: 환경변수가 없거나 비어 있는 경우(어떤 키가 비었는지 명시).
     """
-    key = _env_key_for_password(site_name)
-    pw = os.getenv(key, "").strip()
-    if not pw:
-        raise RuntimeError(f"비밀번호 누락(env 키): {key}")
-    return pw
+    key = _env_key(kind, site_name)
+    value = os.getenv(key, "").strip()
+    if not value:
+        label = "로그인 id" if kind == "ID" else "비밀번호"
+        raise RuntimeError(f"{label} 누락(env 키): {key}")
+    return value
 
 
 def session_path(site_name: str) -> Path:
@@ -234,7 +250,7 @@ def ensure_login(
     Args:
         context: 현재 BrowserContext.
         page: 현재 Page(아직 ``goto`` 전이어야 함).
-        site: 사이트 dict (``name/url/id/login_type``). 선택 키 ``login_url`` 이
+        site: 사이트 dict (``name/url/login_type``). 선택 키 ``login_url`` 이
             있으면 대시보드 진입 실패 시 새 Page로 로그인 페이지에 직접 폴백한다.
         log: 호출부 job 의 로거.
 
@@ -244,7 +260,7 @@ def ensure_login(
 
     Raises:
         playwright.sync_api.TimeoutError: 페이지 진입(goto) 자체가 실패한 경우.
-        RuntimeError: 비밀번호 env 누락.
+        RuntimeError: 로그인 id / 비밀번호 env 누락.
     """
     name = site["name"]
     url = site["url"]
@@ -287,8 +303,9 @@ def ensure_login(
             )
             page.goto(login_url, timeout=GOTO_TIMEOUT_MS)
 
-    pw = _read_password(name)
-    page = _do_login(context, page, login_type, site["id"], pw, url, log)
+    site_id = _read_credential("ID", name)
+    pw = _read_credential("PW", name)
+    page = _do_login(context, page, login_type, site_id, pw, url, log)
 
     save_storage_state(context, session_path(name))
     log.info("[%s] 세션 저장: %s", name, session_path(name))
