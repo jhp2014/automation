@@ -7,7 +7,7 @@
 ```
 runner/
 ├── __main__.py    메인 루프 — 부품 조립만 한다 (얇게)
-├── config.py      jobs.yaml 로딩 + pydantic 스키마 검증, HEALTHCHECK_PING_URL/API_KEY (.env)
+├── config.py      jobs.yaml 로딩 + pydantic 스키마 검증, HEALTHCHECK_PING_URL (.env)
 ├── state.py       runner.json + scheduler.json 두 상태 파일 관리
 ├── scheduler.py   interval / hourly_jitter / one_time_list 3개 모드 판정
 ├── executor.py    sys.executable -m <module> subprocess 실행 (블로킹)
@@ -136,7 +136,7 @@ state_key 는 `{job_name}|{at}|{args 를 '||' 로 join}`. 같은 시각·다른 
 
 - `HEALTHCHECK_PING_URL` 에 `interval_sec` 마다 GET 1회 (timeout 10s).
 - runner 가 멈추면 ping 이 끊긴다 → Healthchecks.io 가 period + grace 경과 후 연동된 Pushover 로 down 알람.
-- 계획된 종료(run_until / stop.flag / KeyboardInterrupt)에서만 `pause()` 로 체크를 일시정지해 오알람을 막는다. 다음 ping(재기동)에서 자동 재개. 예상 못한 예외로 루프가 빠지면 pause 하지 않는다.
+- 종료 사유(run_until / stop.flag / KeyboardInterrupt / 크래시)와 무관하게 ping 이 끊기면 down 알람이 간다. 정상 종료도 알림 대상이다(운영 결정). 재기동 시 첫 ping 으로 up 복귀.
 - job 은 블로킹으로 실행되지만, `run_job` 의 대기 폴링(0.5초)마다 `on_wait` 콜백으로 heartbeat 주기를 확인해 ping 을 보낸다. 따라서 ping 간격은 job 소요 시간과 무관하고 체크의 Grace 를 짧게 둘 수 있다(권장 Period 1분 + Grace 2분).
 - 본 클래스의 메서드는 **runner 본 루프를 죽이지 않는다** — 모든 송신 실패는 내부에서 흡수하고 로그 + 카운터로만 처리.
 - 그러나 **연속 실패가 `MAX_CONSECUTIVE_FAILURES = 3` 에 도달하면 Pushover 로 1회 경고**. 같은 실패 스트릭 동안 추가 경고는 보내지 않으며, 송신이 한 번이라도 성공하면 카운터·플래그가 reset 된다.
@@ -164,7 +164,7 @@ while True:
     sleep(tick_sec)
 
 KeyboardInterrupt → kill_all_running
-finally → (계획된 종료면) hb.pause → [RUNNER END] 로그
+finally → [RUNNER END] 로그
 ```
 
 ## 확장 메모 (현재 미구현)

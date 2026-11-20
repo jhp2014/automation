@@ -14,16 +14,12 @@
        실패하는" 상태가 침묵 속에 흘러가지 않게 한다.
     3) 성공 시 연속 실패 카운터와 경고 플래그를 reset.
 
-== 계획된 종료 ==
-run_until 도달 / stop.flag / Ctrl+C 처럼 **의도된** 종료에서는 :meth:`pause`
-로 Healthchecks.io 체크를 일시정지해 오알람을 막는다. 일시정지된 체크는 다음
-ping 이 도착하면 자동으로 다시 감시 상태가 된다(= runner 재기동 시 자동 재개).
-크래시·hang 같은 비정상 종료에서는 pause 하지 않는다 — 그때 알람이 나야 한다.
+종료 사유와 무관하게(run_until / stop.flag / Ctrl+C / 크래시) ping 이 끊기면
+down 알람이 간다. 정상 종료도 알림을 받는 것이 운영 의도다.
 """
 
 from __future__ import annotations
 
-import re
 import time
 from datetime import datetime
 from typing import Optional
@@ -46,14 +42,6 @@ PING_TIMEOUT_SEC = 10
 # 장애 때 0.5초마다 재시도하지 않게 막는다(기존 tick_sec 페이스와 동일).
 RETRY_GAP_SEC = 10
 
-# Healthchecks.io 관리 API (pause 용).
-HEALTHCHECKS_API_BASE = "https://healthchecks.io/api/v3"
-
-_UUID_RE = re.compile(
-    r"/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?$",
-    re.IGNORECASE,
-)
-
 
 class HeartbeatSender:
     """Healthchecks.io ping URL 로 생존 신호를 보낸다."""
@@ -62,7 +50,6 @@ class HeartbeatSender:
         self,
         *,
         ping_url: str,
-        api_key: str,
         interval_sec: int,
     ) -> None:
         """송신기를 만든다.
@@ -70,9 +57,6 @@ class HeartbeatSender:
         Args:
             ping_url: Healthchecks.io 체크의 ping URL
                 (예: ``https://hc-ping.com/<uuid>``). 필수.
-            api_key: Healthchecks.io 프로젝트 API key. 계획된 종료 시 pause 에만
-                쓰인다. 비어 있으면 pause 를 건너뛴다(정상 종료 때 down 알람이 날 수
-                있음).
             interval_sec: 송신 간격.
         """
         if not ping_url:
@@ -81,22 +65,7 @@ class HeartbeatSender:
                 "runner 데드맨 스위치 전용 ping URL 을 채우세요."
             )
         self._ping_url = ping_url.strip()
-        self._api_key = api_key.strip()
         self._interval = interval_sec
-
-        m = _UUID_RE.search(self._ping_url)
-        self._check_uuid: Optional[str] = m.group(1) if m else None
-
-        if not self._api_key:
-            _log.warning(
-                "[HEARTBEAT] HEALTHCHECK_API_KEY 없음 — 계획된 종료 때 pause 를 못 해 "
-                "down 알람이 갈 수 있습니다."
-            )
-        elif self._check_uuid is None:
-            _log.warning(
-                "[HEARTBEAT] ping URL 에서 체크 UUID 를 찾지 못함(slug 형식?) — "
-                "pause 불가. https://hc-ping.com/<uuid> 형식 URL 을 쓰세요."
-            )
 
         # 연속 실패 카운터와 경고 플래그 — 데드맨 스위치 핵심 상태.
         self._consecutive_failures: int = 0
@@ -148,27 +117,6 @@ class HeartbeatSender:
 
         self._on_success()
         return datetime.now().isoformat()
-
-    def pause(self, reason: str) -> None:
-        """계획된 종료 직전에 체크를 일시정지한다(오알람 방지). 실패는 흡수.
-
-        Args:
-            reason: 로그용 종료 사유.
-        """
-        if not self._api_key or self._check_uuid is None:
-            _log.warning("[HEARTBEAT] pause 생략(%s) — API key/UUID 없음", reason)
-            return
-        url = f"{HEALTHCHECKS_API_BASE}/checks/{self._check_uuid}/pause"
-        try:
-            resp = requests.post(
-                url,
-                headers={"X-Api-Key": self._api_key},
-                timeout=PING_TIMEOUT_SEC,
-            )
-            resp.raise_for_status()
-            _log.info("[HEARTBEAT] Healthchecks 체크 pause 완료(%s)", reason)
-        except Exception as e:
-            _log.warning("[HEARTBEAT] pause 실패(%s): %r — down 알람이 갈 수 있음", reason, e)
 
     # ----------------------------------------------------------------- private
 

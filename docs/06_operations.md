@@ -76,9 +76,8 @@ JENNIFER_PW__JENNIFER_GROUP_SITE=
 JENNIFER_PW__JENNIFER_LMS=
 JENNIFER_PW__JENNIFER_REDPEN=
 
-# Healthchecks.io (runner 데드맨 스위치 — PING_URL 비우면 runner 가 기동되지 않는다)
+# Healthchecks.io (runner 데드맨 스위치 — 비우면 runner 가 기동되지 않는다)
 HEALTHCHECK_PING_URL=
-HEALTHCHECK_API_KEY=
 ```
 
 ### 1-B) `config/daily.yaml` (매일 갱신)

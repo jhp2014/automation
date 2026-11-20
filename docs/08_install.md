@@ -106,10 +106,8 @@ notepad .env
 - `DAILYSERVICE_USER_ID`, `DAILYSERVICE_USER_PW`
 - `JENNIFER_PW__JENNIFER_CLOUD`, `JENNIFER_PW__JENNIFER_GROUP_SITE`, `JENNIFER_PW__JENNIFER_LMS`, `JENNIFER_PW__JENNIFER_REDPEN`
 - `HEALTHCHECK_PING_URL` ← **runner 가 비어 있으면 시작 자체를 거부** (데드맨 스위치 약화 금지 조항)
-- `HEALTHCHECK_API_KEY` ← 계획된 종료(run_until / stop.flag / Ctrl+C) 때 체크 pause 용. 비우면 정상 종료 때도 down 알람이 간다
 
 Healthchecks.io 체크 설정 (최초 1회, healthchecks.io 웹에서):
-- Slug 는 **비워둔다** (ping URL 이 `https://hc-ping.com/<uuid>` 형식이어야 pause 가 동작).
 - Period **1분** (`heartbeat_interval_sec: 60` 과 동일), Grace **2분** → 마지막 ping 후 약 3분이면 down 알람.
   runner 는 job 실행 중에도 대기 루프에서 heartbeat 를 보내므로 job 소요 시간과 무관하다.
 - Integrations 에서 Pushover 연결 후 이 체크에 켠다.
@@ -168,7 +166,7 @@ notepad config\daily.yaml
 ```
 - 시작 시 `==== [RUNNER START] ====`, jobs 로딩, 1회 heartbeat 송신 로그 확인
 - `[HEARTBEAT] ping to Healthchecks OK` 로그 + healthchecks.io 대시보드에서 체크가 up 인지 확인
-- `Ctrl+C` 로 종료, `Healthchecks 체크 pause 완료` 와 `==== [RUNNER END] ====` 확인 (대시보드에서 paused)
+- `Ctrl+C` 로 종료, `==== [RUNNER END] ====` 확인. 약 3분 뒤 대시보드가 down 이 되고 Pushover 알람이 오면 정상
 
 ## 8) bat 단축 (위치 무관)
 

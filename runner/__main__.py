@@ -31,7 +31,6 @@ from common.logging import get_logger
 from common.mutes import MUTES_PATH, reset_mutes_file
 
 from .config import (
-    HEALTHCHECK_API_KEY,
     HEALTHCHECK_PING_URL,
     JobConfig,
     RunnerConfig,
@@ -204,7 +203,6 @@ def main() -> int:
     try:
         hb = HeartbeatSender(
             ping_url=HEALTHCHECK_PING_URL,
-            api_key=HEALTHCHECK_API_KEY,
             interval_sec=cfg.heartbeat_interval_sec,
         )
     except Exception as e:
@@ -246,10 +244,6 @@ def main() -> int:
     # 시작 직후 1회 heartbeat 시도.
     _try_send_heartbeat(hb, runner_state)
 
-    # 계획된 종료 사유. 설정된 경우에만 종료 시 Healthchecks 체크를 pause 한다.
-    # 크래시(예상 못한 예외)로 빠지면 None 으로 남아 pause 없이 down 알람이 간다.
-    planned_stop: Optional[str] = None
-
     try:
         while True:
             # 0) tick 시각 기록(매 tick, heartbeat 무관). status 조회·신선도 보조.
@@ -260,13 +254,11 @@ def main() -> int:
                 LOG.info("[RUNLIMIT] 종료 시각 도달 -> 자식 정리 후 종료")
                 kill_all_running(runner_state)
                 save_runner_state(runner_state)
-                planned_stop = "run_until"
                 break
             if stop_requested():
                 LOG.info("[STOP] stop.flag 감지 -> 자식 정리 후 종료")
                 kill_all_running(runner_state)
                 save_runner_state(runner_state)
-                planned_stop = "stop.flag"
                 break
 
             # 2) 죽은 PID 정리.
@@ -327,10 +319,7 @@ def main() -> int:
         LOG.info("[USER] KeyboardInterrupt -> 자식 정리")
         kill_all_running(runner_state)
         save_runner_state(runner_state)
-        planned_stop = "KeyboardInterrupt"
     finally:
-        if planned_stop is not None:
-            hb.pause(planned_stop)
         # 종료 표식: runner_pid 비우고 stop.flag 정리 → 외부에서 '정지' 로 본다.
         runner_state["runner_pid"] = None
         save_runner_state(runner_state)
